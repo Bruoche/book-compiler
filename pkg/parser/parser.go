@@ -1,9 +1,15 @@
-package comp
+package parser
 
 import (
+	"bufio"
 	"fmt"
 	"strings"
 )
+
+type Context interface {
+	Add(object any) error
+	Compile(*bufio.Writer) error
+}
 
 type Lookup [256]bool
 
@@ -24,7 +30,7 @@ func Make[I, O any](name string, process func(Context, I, byte) O) Node[I, O] {
 	var new O
 	return Node[I, O]{
 		name:    name,
-		links:   []Linkable[O]{},
+		links:   []Linkable[O]{}, // Links given after to avoid circular assignation
 		process: process,
 		result:  new,
 	}
@@ -119,12 +125,18 @@ func Bind[I, O any](n *Node[I, O], chars ...byte) Linkable[I] {
 	}
 }
 
-func Ignoring[IO any](chars byte, links []Linkable[IO]) []Linkable[IO] {
+type ignorer []byte
+
+func Ignoring(chars ...byte) ignorer {
+	return ignorer(chars)
+}
+
+func (ignored ignorer) Has[IO any](links ...Linkable[IO]) []Linkable[IO] {
 	node := Make(
 		"ignored",
 		Pass[IO](),
 	)
-	bind := append(links, Bind(&node, chars))
+	bind := append(links, Bind(&node, []byte(ignored)...))
 	node.Has(bind...)
 	return Has(bind...)
 }

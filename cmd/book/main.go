@@ -6,40 +6,51 @@ import (
 	"io"
 	"os"
 
-	"github.com/Bruoche/book-compiler/internal/nodes"
-	"github.com/Bruoche/book-compiler/internal/obj"
-	"github.com/Bruoche/book-compiler/pkg/comp"
+	"github.com/Bruoche/book-compiler/internal/our"
+	"github.com/Bruoche/book-compiler/pkg/parser"
 )
 
 func main() {
 	fmt.Println("Compiling...")
-	nodes.Init()
-	err := Read("./test.bk")
+	our.Init()
+	filename := "test"
+	c, err := Read(filename)
+	Write(c, filename)
 	if err != nil {
 		fmt.Printf("Error encountered during compilation: %s\n", err)
 	}
 }
 
-func Read(path string) error {
+func Read(filename string) (parser.Context, error) {
+	path := fmt.Sprintf("./%s.bk", filename)
 	f, err := os.Open(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	r := bufio.NewReader(f)
 	c, err := process(path, r)
 	if err != nil {
-		return err
+		return c, err
 	}
-	c.Print()
-	return nil
+	return c, nil
 }
 
-func process(path string, r *bufio.Reader) (comp.Context, error) {
-	var ignored = comp.Lookup{}
+func Write(c parser.Context, filename string) error {
+	path := fmt.Sprintf("./%s.c", filename)
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	r := bufio.NewWriter(f)
+	return c.Compile(r)
+}
+
+func process(path string, r *bufio.Reader) (parser.Context, error) {
+	var ignored = parser.Lookup{}
 	ignored['\r'] = true
-	var c comp.Context = &comp.Compiler{}
-	var node comp.Processor = &nodes.Root
-	var object any = obj.Empty{}
+	var c parser.Context = &our.Context{}
+	var node parser.Processor = &our.Root
+	var object any = our.Empty{}
 	tracker := PositionalTracker{
 		path: path,
 		line: 0,

@@ -12,3 +12,5 @@ func Range(first, last byte) []byte {
 
 var Uncapped = Range('a', 'z')
 var Capitalized = Range('A', 'Z')
+var Letters = append(Uncapped, Capitalized...)
+var All = Range(0, 255)
