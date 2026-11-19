@@ -13,12 +13,22 @@ import (
 func main() {
 	fmt.Println("Compiling...")
 	our.Init()
-	filename := "test"
-	c, err := Read(filename)
-	Write(c, filename)
+	err := compile("test")
 	if err != nil {
-		fmt.Printf("Error encountered during compilation: %s\n", err)
+		fmt.Println(err)
 	}
+}
+
+func compile(filename string) error {
+	c, err := Read(filename)
+	if err != nil {
+		return fmt.Errorf("Syntax error: %s\n", err)
+	}
+	err = Write(c, filename)
+	if err != nil {
+		return fmt.Errorf("Error during compilation: %s\n", err)
+	}
+	return nil
 }
 
 func Read(filename string) (parser.Context, error) {

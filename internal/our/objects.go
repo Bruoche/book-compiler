@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Bruoche/book-compiler/pkg/parser"
@@ -36,6 +37,7 @@ func (c *Context) Add(obj any) error {
 const TabSize = 2
 
 func (c Context) Compile(w *bufio.Writer) error {
+	fmt.Println("Writing to file...")
 	errs := []error{}
 	indent := 0
 	compile(w, indent, "int main() {")
@@ -48,7 +50,12 @@ func (c Context) Compile(w *bufio.Writer) error {
 			if isDefined(v, c.variables) {
 				errs = append(errs, fmt.Errorf("Variable \"%s\" is already defined.", v.Name))
 			}
-			write(declaration.Declare())
+			compiled, err := declaration.Declare()
+			if err != nil {
+				errs = append(errs, fmt.Errorf("Error compiling variable declaration for \"%s\" : %s", declaration.GetName(), err))
+			} else {
+				write(compiled)
+			}
 		}
 		return errors.Join(errs...)
 	})
@@ -88,15 +95,24 @@ func isDefined[T Namable](o Namable, defined []T) bool {
 type Type struct {
 	Name      string
 	Signature string
-	Compile   func(val string) string
+	Compile   func(val string) (string, error)
 }
 
 func (T Type) GetName() string {
 	return T.Name
 }
 
+var Int = Type{
+	Name:      "Int",
+	Signature: "int",
+	Compile: func(val string) (string, error) {
+		n, err := strconv.Atoi(val)
+		return strconv.Itoa(n), err
+	},
+}
+
 type Declarable interface {
-	Declare() string
+	Declare() (string, error)
 	Declared() Var
 	GetName() string
 }

@@ -43,11 +43,12 @@ type DefVal struct {
 
 var _ Declarable
 
-func (v DefVal) Compile() string {
-	return fmt.Sprintf("%s = %s", v.name, v.val.T.Compile(v.val.def))
+func (v DefVal) Compile() (string, error) {
+	val, err := v.val.T.Compile(v.val.def)
+	return fmt.Sprintf("%s = %s", v.name, val), err
 }
 
-var startDefAssign = parser.Make(
+var startDefVal = parser.Make(
 	"define_with_val",
 	func(c parser.Context, s Subject, char byte) DefVal {
 		return DefVal{
@@ -56,7 +57,24 @@ var startDefAssign = parser.Make(
 		}
 	},
 )
-var assigned = parser.Make(
+var defValIntStart = parser.Make(
+	"define_int_val",
+	func(c parser.Context, s DefVal, char byte) DefVal {
+		s.val = Val{
+			def: string(char),
+			T:   Int,
+		}
+		return s
+	},
+)
+var defValInt = parser.Make(
+	"define_int_val",
+	func(c parser.Context, s DefVal, char byte) DefVal {
+		s.val.def += string(char)
+		return s
+	},
+)
+var defValDone = parser.Make(
 	"end",
 	func(c parser.Context, s DefVal, char byte) Empty {
 		c.Add(s)
@@ -65,15 +83,16 @@ var assigned = parser.Make(
 )
 
 func Init() {
-	Root.Has(
-		parser.Ignoring(' ').Has(
-			parser.Bind(&startInstruction, chars.Uncapped...),
-		)...,
+	root := parser.Ignoring(' ').Has(
+		parser.Bind(&startInstruction, chars.Uncapped...),
 	)
-	wordHandles := parser.Has(
+	Root.Has(
+		root...,
+	)
+	wordHandles := parser.Prep(
 		parser.Bind(&subject, chars.Letters...),
 		parser.Bind(&subjectDone, ' '),
-		parser.Bind(&startDefAssign, '='),
+		parser.Bind(&startDefVal, '='),
 	)
 	startInstruction.Has(
 		wordHandles...,
@@ -83,11 +102,25 @@ func Init() {
 	)
 	subjectDone.Has(
 		parser.Ignoring(' ').Has(
-			parser.Bind(&startDefAssign, '='),
+			parser.Bind(&startDefVal, '='),
 		)...,
 	)
-	startDefAssign.Has()
-	assigned.Has(
-		parser.Bind(&Root, '\n'),
+	startDefVal.Has(
+		parser.Ignoring(' ').Has(
+			parser.Bind(&defValIntStart, chars.Nums...),
+		)...,
+	)
+	valInt := parser.Prep(
+		parser.Bind(&defValInt, chars.Nums...),
+		parser.Bind(&defValDone, '\n'),
+	)
+	defValIntStart.Has(
+		valInt...,
+	)
+	defValInt.Has(
+		valInt...,
+	)
+	defValDone.Has(
+		root...,
 	)
 }

@@ -138,10 +138,10 @@ func (ignored ignorer) Has[IO any](links ...Linkable[IO]) []Linkable[IO] {
 	)
 	bind := append(links, Bind(&node, []byte(ignored)...))
 	node.Has(bind...)
-	return Has(bind...)
+	return Prep(bind...)
 }
 
-func Has[I any](links ...Linkable[I]) []Linkable[I] {
+func Prep[I any](links ...Linkable[I]) []Linkable[I] {
 	return links
 }
 
