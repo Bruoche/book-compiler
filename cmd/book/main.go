@@ -37,6 +37,7 @@ func Read(filename string) (parser.Context, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
 	r := bufio.NewReader(f)
 	c, err := process(path, r)
 	if err != nil {
@@ -51,14 +52,22 @@ func Write(c parser.Context, filename string) error {
 	if err != nil {
 		return err
 	}
-	r := bufio.NewWriter(f)
-	return c.Compile(r)
+	defer func() {
+		err = f.Close()
+	}()
+	w := bufio.NewWriter(f)
+	err = c.Compile(w)
+	if err != nil {
+		return err
+	}
+	err = w.Flush()
+	return err
 }
 
 func process(path string, r *bufio.Reader) (parser.Context, error) {
 	var ignored = parser.Lookup{}
 	ignored['\r'] = true
-	var c parser.Context = &our.Context{}
+	var c parser.Context = our.BaseContext()
 	var node parser.Processor = &our.Root
 	var object any = our.Empty{}
 	tracker := PositionalTracker{
@@ -70,9 +79,15 @@ func process(path string, r *bufio.Reader) (parser.Context, error) {
 	for true {
 		var err error
 		if !ignored[char] {
-			err = node.Try(c, object, char)
+			defined, err := node.Try(object, char)
 			if err != nil {
 				return c, tracker.Throw(err)
+			}
+			if defined != nil {
+				err := c.Add(defined)
+				if err != nil {
+					return c, err
+				}
 			}
 			object = node.Get()
 		}

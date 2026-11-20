@@ -14,7 +14,7 @@ type Context interface {
 type Lookup [256]bool
 
 type Processor interface {
-	Try(Context, any, byte) error
+	Try(any, byte) (defined any, err error)
 	Get() any
 	Next(byte) (Processor, error)
 }
@@ -22,11 +22,11 @@ type Processor interface {
 type Node[I, O any] struct {
 	name    string
 	links   []Linkable[O]
-	process func(Context, I, byte) O
+	process func(I, byte) (O, any)
 	result  O
 }
 
-func Make[I, O any](name string, process func(Context, I, byte) O) Node[I, O] {
+func Make[I, O any](name string, process func(I, byte) (O, any)) Node[I, O] {
 	var new O
 	return Node[I, O]{
 		name:    name,
@@ -46,17 +46,19 @@ func (n *Node[I, O]) Has(nodes ...Linkable[O]) {
 	n.links = nodes
 }
 
-func (n *Node[I, O]) Process(c Context, in I, char byte) {
-	n.result = n.process(c, in, char)
+func (n *Node[I, O]) Process(in I, char byte) any {
+	result, returned := n.process(in, char)
+	n.result = result
+	return returned
 }
 
-func (n *Node[I, O]) Try(c Context, in any, char byte) error {
+func (n *Node[I, O]) Try(in any, char byte) (any, error) {
 	valid, ok := in.(I)
 	if !ok {
-		return fmt.Errorf("Compiler error: got type %T inside %s instead of expected type %T", in, n.name, valid)
+		return nil, fmt.Errorf("Compiler error: got type %T inside %s instead of expected type %T", in, n.name, valid)
 	}
-	n.Process(c, valid, char)
-	return nil
+	defined := n.Process(valid, char)
+	return defined, nil
 }
 
 func (n Node[I, O]) Get() any {
@@ -108,7 +110,7 @@ func merge(streak []byte, allowed []string) []string {
 
 type Linkable[I any] interface {
 	Processor
-	Process(Context, I, byte)
+	Process(I, byte) any
 	CanHandle(byte) bool
 	GetName() string
 	Handled() []string
@@ -166,8 +168,8 @@ func (l Link[I, O]) Handled() []string {
 	return handled
 }
 
-func Pass[IO any]() func(Context, IO, byte) IO {
-	return func(c Context, io IO, char byte) IO {
-		return io
+func Pass[IO any]() func(IO, byte) (IO, any) {
+	return func(io IO, char byte) (IO, any) {
+		return io, nil
 	}
 }

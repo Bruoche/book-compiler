@@ -1,8 +1,6 @@
 package our
 
 import (
-	"fmt"
-
 	"github.com/Bruoche/book-compiler/pkg/chars"
 	"github.com/Bruoche/book-compiler/pkg/parser"
 )
@@ -18,17 +16,17 @@ type Subject struct {
 
 var startInstruction = parser.Make(
 	"start_instruction",
-	func(c parser.Context, _ Empty, char byte) Subject {
+	func(_ Empty, char byte) (Subject, any) {
 		return Subject{
 			name: string(char),
-		}
+		}, nil
 	},
 )
 var subject = parser.Make(
 	"start_instruction",
-	func(c parser.Context, s Subject, char byte) Subject {
+	func(s Subject, char byte) (Subject, any) {
 		s.name = s.name + string(char)
-		return s
+		return s, nil
 	},
 )
 var subjectDone = parser.Make(
@@ -36,49 +34,36 @@ var subjectDone = parser.Make(
 	parser.Pass[Subject](),
 )
 
-type DefVal struct {
-	name string
-	val  Val
-}
-
-var _ Declarable
-
-func (v DefVal) Compile() (string, error) {
-	val, err := v.val.T.Compile(v.val.def)
-	return fmt.Sprintf("%s = %s", v.name, val), err
-}
-
 var startDefVal = parser.Make(
 	"define_with_val",
-	func(c parser.Context, s Subject, char byte) DefVal {
+	func(s Subject, char byte) (DefVal, any) {
 		return DefVal{
 			name: s.name,
 			val:  Val{},
-		}
+		}, nil
 	},
 )
 var defValIntStart = parser.Make(
 	"define_int_val",
-	func(c parser.Context, s DefVal, char byte) DefVal {
+	func(s DefVal, char byte) (DefVal, any) {
 		s.val = Val{
 			def: string(char),
 			T:   Int,
 		}
-		return s
+		return s, nil
 	},
 )
 var defValInt = parser.Make(
 	"define_int_val",
-	func(c parser.Context, s DefVal, char byte) DefVal {
+	func(s DefVal, char byte) (DefVal, any) {
 		s.val.def += string(char)
-		return s
+		return s, nil
 	},
 )
 var defValDone = parser.Make(
 	"end",
-	func(c parser.Context, s DefVal, char byte) Empty {
-		c.Add(s)
-		return Empty{}
+	func(s DefVal, char byte) (Empty, any) {
+		return Empty{}, s
 	},
 )
 
