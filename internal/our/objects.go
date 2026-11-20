@@ -14,27 +14,75 @@ func Line(format string, vals ...any) string {
 }
 
 type context struct {
-	types        []Type
-	definables   []Declarable
-	vars         []Var
 	instructions []Instruction
+}
+
+func Context() *context {
+	return &context{}
+}
+
+type DefinedVar struct {
+	Name string
+	val  Val
+}
+
+var _ Declarable = DefinedVar{}
+var _ Assignable = &DefinedVar{}
+
+func (v DefinedVar) Compile(state) (string, error) {
+	return v.Declare()
+}
+
+func (v DefinedVar) Declare() (string, error) {
+	val, err := v.val.T.Compile(v.val.def)
+	return fmt.Sprintf("%s %s = %s", v.val.T.Signature, v.Name, val), err
+}
+
+func (v DefinedVar) Declared() DefinedVar {
+	return DefinedVar{
+		Name: v.Name,
+		val:  v.val,
+	}
+}
+
+func (v DefinedVar) GetName() string {
+	return v.Name
+}
+
+func (v *DefinedVar) Assign(new Val) {
+	v.val = new
+}
+
+func (v DefinedVar) GetVal() Val {
+	return v.val
+}
+
+type state struct {
+	types []Type
+	vars  []DefinedVar
 }
 
 var _ parser.Context = &context{}
 
-func BaseContext() *context {
-	return &context{
+func BaseState() state {
+	return state{
 		types: []Type{
 			Int,
 		},
 	}
 }
 
+func (s state) GetVar(name string) (DefinedVar, bool) {
+	for _, v := range s.vars {
+		if v.Name == name {
+			return v, true
+		}
+	}
+	return DefinedVar{}, false
+}
+
 func (c *context) Add(obj any) error {
-	fmt.Printf("Added %T\n", obj)
 	switch o := obj.(type) {
-	case Declarable:
-		c.definables = append(c.definables, o)
 	case Instruction:
 		c.instructions = append(c.instructions, o)
 	default:
@@ -48,37 +96,59 @@ const TabSize = 2
 func (c context) Compile(w *bufio.Writer) error {
 	fmt.Println("Writing to file...")
 	errs := []error{}
+	globals, main, err := play(c)
+	if err != nil {
+		return err
+	}
 	indent := 0
-	compile(w, indent, "int main() {\n")
-	err := indented(w, indent, func(write func(string), indent int) error {
-		for _, declaration := range c.definables {
+	for _, compiled := range globals {
+		compile(w, indent, Line(compiled))
+	}
+	compile(w, indent, "\nint main() {\n")
+	indented(w, indent, func(write func(string), indent int) {
+		for _, compiled := range main {
+			write(Line(compiled))
+		}
+	})
+	compile(w, indent, "}\n")
+	return errors.Join(errs...)
+}
+
+func play(c context) (globals []string, main []string, err error) {
+	state := BaseState()
+	for _, instruction := range c.instructions {
+		declaration, ok := instruction.(Declarable)
+		if ok {
 			v := declaration.Declared()
-			if !isDefined(v.T, c.types) {
-				errs = append(errs, fmt.Errorf("Unkown type %s used in assignation of variable %s", v.T.Name, v.Name))
+			if !isDefined(v.val.T, state.types) {
+				return globals, main, fmt.Errorf("Unkown type %s used in assignation of variable %s", v.val.T.Name, v.Name)
 			}
-			if isDefined(v, c.vars) {
-				errs = append(errs, fmt.Errorf("Variable \"%s\" is already defined.", v.Name))
+			if isDefined(v, state.vars) {
+				return globals, main, fmt.Errorf("Variable \"%s\" is already defined.", v.Name)
 			}
 			compiled, err := declaration.Declare()
 			if err != nil {
-				errs = append(errs, fmt.Errorf("Error compiling variable declaration for \"%s\" : %s", declaration.GetName(), err))
-			} else {
-				c.vars = append(c.vars, v)
-				write(Line(compiled))
+				return globals, main, fmt.Errorf("Error compiling variable declaration for \"%s\" : %s", declaration.GetName(), err)
 			}
+			state.vars = append(state.vars, v)
+			globals = append(globals, compiled)
+		} else {
+			compiled, err := instruction.Compile(state)
+			if err != nil {
+				return globals, main, err
+			}
+			main = append(main, compiled)
 		}
-		return errors.Join(errs...)
-	})
-	compile(w, indent, "}\n")
-	return err
+	}
+	return globals, main, nil
 }
 
-func indented(w *bufio.Writer, current_indent int, compilation func(write func(string), indent int) error) error {
+func indented(w *bufio.Writer, current_indent int, compilation func(write func(string), indent int)) {
 	indent := current_indent + 1
 	writeFunc := func(s string) {
 		compile(w, indent, s)
 	}
-	return compilation(writeFunc, indent)
+	compilation(writeFunc, indent)
 }
 
 func compile(w *bufio.Writer, depth int, line string) {
@@ -107,6 +177,10 @@ type Type struct {
 	Compile   func(val string) (string, error)
 }
 
+func (T Type) SatisfiedBy(other Type) bool {
+	return T.Name == other.Name
+}
+
 func (T Type) GetName() string {
 	return T.Name
 }
@@ -121,8 +195,9 @@ var Int = Type{
 }
 
 type Declarable interface {
+	Instruction
 	Declare() (string, error)
-	Declared() Var
+	Declared() DefinedVar
 	GetName() string
 }
 
@@ -131,51 +206,54 @@ type Var struct {
 	T    Type
 }
 
-var _ Declarable = Var{}
-
 func (v Var) GetName() string {
 	return v.Name
 }
 
-func (v Var) Declare() (string, error) {
-	return Line("%s %s", v.T.Signature, v.T.Name), nil
-}
-
-func (v Var) Declared() Var {
-	return v
-}
-
-type DefVal struct {
-	name string
-	val  Val
-}
-
-var _ Declarable = DefVal{}
-
-func (v DefVal) Declare() (string, error) {
-	val, err := v.val.T.Compile(v.val.def)
-	return fmt.Sprintf("%s %s = %s", v.val.T.Signature, v.name, val), err
-}
-
-func (v DefVal) Declared() Var {
-	return Var{
-		Name: v.name,
-		T:    v.val.T,
-	}
-}
-
-func (v DefVal) GetName() string {
-	return v.name
+type Assignable interface {
+	Assign(Val)
+	GetVal() Val
 }
 
 type Instruction interface {
-	Vet(context) error
-	Compile() string
+	Compile(state) (string, error)
+}
+
+type Assignation struct {
+	targetName string
+	val        Val
+}
+
+var _ Instruction = Assignation{}
+var _ Assignable = &Assignation{}
+
+func (a Assignation) Compile(s state) (string, error) {
+	target, ok := s.GetVar(a.targetName)
+	if !ok {
+		return "", fmt.Errorf("Variable \"%s\" is undefined. Cannot assign a value to it. Please use \":=\" for implicit declaration.", a.targetName)
+	}
+	if !target.val.T.SatisfiedBy(a.val.T) {
+		return "", fmt.Errorf("Cannot assign value \"%s\" of type %s to variable %s of type %s", a.val.def, a.val.T.Name, target.Name, target.val.T.Name)
+	}
+	compiled, err := a.val.Compile()
+	return fmt.Sprintf("%s = %s", target.Name, compiled), err
+}
+
+func (a *Assignation) Assign(new Val) {
+	a.val = new
+}
+
+func (a Assignation) GetVal() Val {
+	return a.val
 }
 
 type Val struct {
 	def string
 	T   Type
+}
+
+func (v Val) Compile() (string, error) {
+	return v.T.Compile(v.def)
 }
 
 type Empty struct{}

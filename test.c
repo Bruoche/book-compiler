@@ -1,5 +1,9 @@
+int test = 42;
+int more = 123;
+int whuh = 3;
+int new = 13;
+
 int main() {
-  int test = 42;
-  int more = 123;
-  int whuh = 3;
+  test = 67;
+  new = 12;
 }

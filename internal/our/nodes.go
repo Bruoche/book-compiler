@@ -37,83 +37,120 @@ var startDef = parser.Make(
 	"define_var",
 	parser.Pass[Subject](),
 )
-var startDefVal = parser.Make(
+var startDefinedVar = parser.Make(
 	"define_with_val",
-	func(s Subject, char byte) (DefVal, any) {
-		return DefVal{
-			name: s.name,
+	func(s Subject, char byte) (Assignable, any) {
+		return &DefinedVar{
+			Name: s.name,
 			val:  Val{},
 		}, nil
 	},
 )
-var defValIntStart = parser.Make(
+var assignVal = parser.Make(
+	"assign_val",
+	func(s Subject, char byte) (Assignable, any) {
+		return &Assignation{
+			targetName: s.name,
+			val:        Val{},
+		}, nil
+	},
+)
+var DefinedVarIntStart = parser.Make(
 	"define_int_val",
-	func(s DefVal, char byte) (DefVal, any) {
-		s.val = Val{
+	func(s Assignable, char byte) (Assignable, any) {
+		s.Assign(Val{
 			def: string(char),
 			T:   Int,
-		}
+		})
 		return s, nil
 	},
 )
-var defValInt = parser.Make(
+var DefinedVarInt = parser.Make(
 	"define_int_val",
-	func(s DefVal, char byte) (DefVal, any) {
-		s.val.def += string(char)
+	func(s Assignable, char byte) (Assignable, any) {
+		v := s.GetVal()
+		v.def += string(char)
+		s.Assign(v)
 		return s, nil
 	},
 )
-var defValDone = parser.Make(
+var DefinedVarDone = parser.Make(
 	"end",
-	func(s DefVal, char byte) (Empty, any) {
+	func(s Assignable, char byte) (Empty, any) {
 		return Empty{}, s
 	},
 )
+var root = parser.Ignoring(' ').Has(
+	parser.Bind(&startInstruction, chars.Uncapped...),
+	parser.Bind(&Root, '\n'),
+)
 
 func Init() {
-	root := parser.Ignoring(' ').Has(
-		parser.Bind(&startInstruction, chars.Uncapped...),
-	)
 	Root.Has(
 		root...,
 	)
-	wordHandles := parser.Prep(
+	instructions()
+}
+func instructions() {
+	subjects()
+	vars()
+	vals()
+}
+func subjects() {
+	subjectAction := parser.Prep(
+		parser.Bind(&startDef, ':'),
+		parser.Bind(&assignVal, '='),
+	)
+	subjectDef := parser.Prep(append(
+		subjectAction,
 		parser.Bind(&subject, chars.Letters...),
 		parser.Bind(&subjectDone, ' '),
-		parser.Bind(&startDef, ':'),
-	)
+	)...)
 	startInstruction.Has(
-		wordHandles...,
+		subjectDef...,
 	)
 	subject.Has(
-		wordHandles...,
+		subjectDef...,
 	)
 	subjectDone.Has(
 		parser.Ignoring(' ').Has(
-			parser.Bind(&startDef, ':'),
+			subjectAction...,
 		)...,
 	)
+}
+func vars() {
 	startDef.Has(
 		parser.Ignoring(' ').Has(
-			parser.Bind(&startDefVal, '='),
+			parser.Bind(&startDefinedVar, '='),
 		)...,
 	)
-	startDefVal.Has(
+	assign := parser.Prep(
+		parser.Bind(&DefinedVarIntStart, chars.Nums...),
+	)
+	startDefinedVar.Has(
 		parser.Ignoring(' ').Has(
-			parser.Bind(&defValIntStart, chars.Nums...),
+			assign...,
 		)...,
 	)
+	assignVal.Has(
+		parser.Ignoring(' ').Has(
+			assign...,
+		)...,
+	)
+
+}
+func vals() {
 	valInt := parser.Prep(
-		parser.Bind(&defValInt, chars.Nums...),
-		parser.Bind(&defValDone, '\n'),
+		parser.Bind(&DefinedVarInt, chars.Nums...),
+		parser.Bind(&DefinedVarDone, '\n'),
 	)
-	defValIntStart.Has(
+	DefinedVarIntStart.Has(
 		valInt...,
 	)
-	defValInt.Has(
+	DefinedVarInt.Has(
 		valInt...,
 	)
-	defValDone.Has(
+	DefinedVarDone.Has(
 		root...,
 	)
 }

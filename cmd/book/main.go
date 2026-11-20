@@ -67,7 +67,7 @@ func Write(c parser.Context, filename string) error {
 func process(path string, r *bufio.Reader) (parser.Context, error) {
 	var ignored = parser.Lookup{}
 	ignored['\r'] = true
-	var c parser.Context = our.BaseContext()
+	var c parser.Context = our.Context()
 	var node parser.Processor = &our.Root
 	var object any = our.Empty{}
 	tracker := PositionalTracker{
