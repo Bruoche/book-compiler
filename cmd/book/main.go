@@ -94,6 +94,13 @@ func process(path string, r *bufio.Reader) (parser.Context, error) {
 		char, err = r.ReadByte()
 		if err != nil {
 			if err == io.EOF {
+				_, done := object.(our.Empty)
+				if !done {
+					err := c.Add(object)
+					if err != nil {
+						return c, err
+					}
+				}
 				return c, nil
 			}
 			return c, tracker.Throw(err)

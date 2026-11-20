@@ -33,7 +33,10 @@ var subjectDone = parser.Make(
 	"action",
 	parser.Pass[Subject](),
 )
-
+var startDef = parser.Make(
+	"define_var",
+	parser.Pass[Subject](),
+)
 var startDefVal = parser.Make(
 	"define_with_val",
 	func(s Subject, char byte) (DefVal, any) {
@@ -77,7 +80,7 @@ func Init() {
 	wordHandles := parser.Prep(
 		parser.Bind(&subject, chars.Letters...),
 		parser.Bind(&subjectDone, ' '),
-		parser.Bind(&startDefVal, '='),
+		parser.Bind(&startDef, ':'),
 	)
 	startInstruction.Has(
 		wordHandles...,
@@ -86,6 +89,11 @@ func Init() {
 		wordHandles...,
 	)
 	subjectDone.Has(
+		parser.Ignoring(' ').Has(
+			parser.Bind(&startDef, ':'),
+		)...,
+	)
+	startDef.Has(
 		parser.Ignoring(' ').Has(
 			parser.Bind(&startDefVal, '='),
 		)...,

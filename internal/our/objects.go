@@ -31,6 +31,7 @@ func BaseContext() *context {
 }
 
 func (c *context) Add(obj any) error {
+	fmt.Printf("Added %T\n", obj)
 	switch o := obj.(type) {
 	case Declarable:
 		c.definables = append(c.definables, o)
