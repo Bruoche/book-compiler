@@ -40,7 +40,7 @@ var startDef = parser.Make(
 var startDefinedVar = parser.Make(
 	"define_with_val",
 	func(s Subject, char byte) (Assignable, any) {
-		return &DefinedVar{
+		return &VarDef{
 			Name: s.name,
 			val:  Val{},
 		}, nil
@@ -55,29 +55,55 @@ var assignVal = parser.Make(
 		}, nil
 	},
 )
+
+func DefValStart(val func(char byte) Val) func(Assignable, byte) (Assignable, any) {
+	return func(a Assignable, char byte) (Assignable, any) {
+		a.Assign(val(char))
+		return a, nil
+	}
+}
+
+var DefValAppend = func(a Assignable, char byte) (Assignable, any) {
+	v := a.GetVal()
+	v.def += string(char)
+	a.Assign(v)
+	return a, nil
+}
+
 var DefinedVarIntStart = parser.Make(
 	"define_int_val",
-	func(s Assignable, char byte) (Assignable, any) {
-		s.Assign(Val{
+	DefValStart(func(char byte) Val {
+		return Val{
 			def: string(char),
 			T:   Int,
-		})
-		return s, nil
-	},
+		}
+	}),
 )
 var DefinedVarInt = parser.Make(
 	"define_int_val",
-	func(s Assignable, char byte) (Assignable, any) {
-		v := s.GetVal()
-		v.def += string(char)
-		s.Assign(v)
-		return s, nil
-	},
+	DefValAppend,
+)
+var DefinedVarStrStart = parser.Make(
+	"define_str_val",
+	DefValStart(func(char byte) Val {
+		return Val{
+			def: "",
+			T:   String,
+		}
+	}),
+)
+var DefinedVarStr = parser.Make(
+	"define_str_val",
+	DefValAppend,
+)
+var DefinedVarReady = parser.Make(
+	"defined_str_val",
+	parser.Pass[Assignable](),
 )
 var DefinedVarDone = parser.Make(
 	"end",
-	func(s Assignable, char byte) (Empty, any) {
-		return Empty{}, s
+	func(a Assignable, char byte) (Empty, any) {
+		return Empty{}, a
 	},
 )
 var root = parser.Ignoring(' ').Has(
@@ -126,6 +152,7 @@ func vars() {
 	)
 	assign := parser.Prep(
 		parser.Bind(&DefinedVarIntStart, chars.Nums...),
+		parser.Bind(&DefinedVarStrStart, '"'),
 	)
 	startDefinedVar.Has(
 		parser.Ignoring(' ').Has(
@@ -140,17 +167,27 @@ func vars() {
 
 }
 func vals() {
-	valInt := parser.Prep(
+	val(&DefinedVarIntStart, &DefinedVarInt,
 		parser.Bind(&DefinedVarInt, chars.Nums...),
 		parser.Bind(&DefinedVarDone, '\n'),
 	)
-	DefinedVarIntStart.Has(
-		valInt...,
+	val(&DefinedVarStrStart, &DefinedVarStr,
+		parser.Bind(&DefinedVarReady, '"'),
+		parser.Bind(&DefinedVarStr, chars.All...),
 	)
-	DefinedVarInt.Has(
-		valInt...,
+	DefinedVarReady.Has(
+		parser.Bind(&DefinedVarDone, '\n'),
 	)
 	DefinedVarDone.Has(
 		root...,
+	)
+}
+
+func val(start *parser.Node[Assignable, Assignable], assign *parser.Node[Assignable, Assignable], links ...parser.Linkable[Assignable]) {
+	start.Has(
+		links...,
+	)
+	assign.Has(
+		links...,
 	)
 }

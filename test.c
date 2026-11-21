@@ -1,9 +1,15 @@
-int test = 42;
-int more = 123;
-int whuh = 3;
-int new = 13;
+#include <stdlib.h>
+
+int num = 42;
+char *str;
 
 int main() {
-  test = 67;
-  new = 12;
+  num = 67;
+  str = (char *) malloc(4 * sizeof(char));
+  str[0] = 't';
+  str[1] = 'e';
+  str[2] = 's';
+  str[3] = 't';
+  str = new;
+  free(str);
 }
