@@ -92,7 +92,7 @@ func (s Stack) hasType(T Type) bool {
 func (s Stack) Pop() (free []string, err error) {
 	for _, v := range s.top().GetVars() {
 		if v.Allocated() {
-			free = append(free, fmt.Sprintf("free(%s)", v.Signature()))
+			free = append(free, Line("free(%s)", v.Signature()))
 			err := s.top().Remove(v)
 			if err != nil {
 				return free, err
@@ -116,9 +116,9 @@ type State interface {
 	NewVar(Var)
 	NewFunc(Func)
 	VetType(Type) error
-	VetVar(Var) error
+	VetVar(Signature) error
 	VetFunc(Func) error
-	Remove(Var) error
+	Remove(Signature) error
 }
 
 func Compile(instructions []Compilable, stack *Stack) (globals []string, main []string, err error) {
@@ -148,15 +148,19 @@ type Type interface {
 }
 
 type Var interface {
+	Signature
+	Allocated() bool
+}
+
+type Signature interface {
 	Translatable
 	Type() Type
-	Allocated() bool
 }
 
 type Func interface {
 	Translatable
 	Return() Type
-	Args() []Var
+	Args() []Signature
 }
 
 type Translatable interface {

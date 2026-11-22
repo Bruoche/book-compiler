@@ -128,54 +128,103 @@ var Int = Primitive(
 
 var String = Object(
 	"String",
-	"str",
+	"char *",
 	func(val string) (string, error) {
 		return fmt.Sprintf("\"%s\"", val), nil
 	},
 	func(name, val string) ([]string, []string, bool, error) {
-		declare := []string{}
-		assign := []string{parser.Line("%s = (char *) malloc(%d * sizeof(char))", name, len(val))}
-		for i, char := range val {
-			assign = append(assign, parser.Line("%s[%d] = '%s'", name, i, string(char)))
+		declare := []string{
+			parser.Line("char *%s", name),
+			parser.Line("int len_%s", name),
+		}
+		assign := []string{
+			parser.Line("%s = strdup(\"%s\")", name, val),
 		}
 		return declare, assign, true, nil
 	},
 	func(name, val string) ([]string, error) {
-		return []string{}, nil
+		return []string{
+			parser.Line("f__realloc(%s, len_%s, \"%s\", %d)", name, name, val, len(val)),
+			parser.Line("len_%s = %d", name, len(val)),
+		}, nil
 	},
 )
 
+type RawInst []string
+
+var _ parser.Compilable = RawInst{}
+
+func (raw RawInst) Declare(*parser.Stack) (declared []string, main []string, err error) {
+	return declared, raw, nil
+}
+
 type Function struct {
-	Name         string
-	Return       SimpleType
-	Args         []VarSignature
-	Instructions []parser.Compilable
+	name         string
+	returnType   parser.Type
+	args         []parser.Signature
+	instructions []parser.Compilable
 }
 
 var _ parser.Compilable = Function{}
+var _ parser.Func = Function{}
+
+func (f Function) GetName() string {
+	return f.name
+}
+func (f Function) Return() parser.Type {
+	return f.returnType
+}
+func (f Function) Args() []parser.Signature {
+	return f.args
+}
 
 func (f Function) Declare(parent *parser.Stack) (declared []string, assign []string, err error) {
 	funcState := state{}
 	stack := append(*parent, &funcState)
-	top, main, err := parser.Compile(f.Instructions, &stack)
+	top, main, err := parser.Compile(f.instructions, &stack)
 	if err != nil {
 		return
 	}
 	args := []string{}
-	for _, arg := range f.Args {
-		args = append(args, fmt.Sprintf("%s %s", arg.T.Signature(), arg.Signature()))
+	for _, arg := range f.args {
+		args = append(args, fmt.Sprintf("%s %s", arg.Type().Signature(), arg.Signature()))
 	}
-	declared = append(declared, fmt.Sprintf("\n%s %s (%s) {", f.Return.Signature(), f.Signature(), strings.Join(args, ", ")))
+	ret := "void"
+	if f.Return() != nil {
+		ret = f.Return().Signature()
+	}
+	declared = append(declared, fmt.Sprintf("\n%s %s (%s) {", ret, f.Signature(), strings.Join(args, ", ")))
 	indent := strings.Repeat(" ", TabSize)
 	for _, inst := range append(top, main...) {
 		declared = append(declared, indent+inst)
 	}
-	declared = append(declared, "}\n")
+	declared = append(declared, "}\n\n")
 	return
 }
 
 func (f Function) Signature() string {
-	return "f_" + f.Name
+	return "f_" + f.name
+}
+
+var Realloc = Function{
+	name:       "_realloc",
+	returnType: nil,
+	args: []parser.Signature{
+		VarSignature{"_str1", String},
+		VarSignature{"_len1", Int},
+		VarSignature{"_str2", String},
+		VarSignature{"_len2", Int},
+	},
+	instructions: []parser.Compilable{
+		RawInst{
+			"if (v__len1 != v__len2) {\n",
+			parser.Line("  v__len1 = v__len2"),
+			parser.Line("  v__str1 = (char *) realloc(v__str1, v__len1 * sizeof(char) + 1)"),
+			parser.Line("  assert(v__str1 != NULL)"),
+			"}\n",
+			parser.Line("strcpy(v__str1, v__str2)"),
+		},
+	},
 }
 
 type VarSignature struct {
@@ -183,11 +232,16 @@ type VarSignature struct {
 	T    parser.Type
 }
 
+var _ parser.Signature = VarSignature{}
+
 func (v VarSignature) GetName() string {
 	return v.Name
 }
 func (v VarSignature) Signature() string {
 	return "v_" + v.Name
+}
+func (v VarSignature) Type() parser.Type {
+	return v.T
 }
 
 type Var struct {

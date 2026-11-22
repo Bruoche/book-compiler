@@ -13,7 +13,11 @@ type intermediate struct {
 }
 
 func IR() *intermediate {
-	return &intermediate{}
+	return &intermediate{
+		parsed: []parser.Compilable{
+			Realloc,
+		},
+	}
 }
 
 var _ parser.IR = &intermediate{}
@@ -30,12 +34,14 @@ func (ir intermediate) Parsed() []parser.Compilable {
 
 func (ir *intermediate) Compile(w *bufio.Writer) error {
 	errs := []error{}
-	globals, main, err := play(ir)
+	globals, main, err := Translate(ir)
 	if err != nil {
 		return err
 	}
 	indent := 0
-	compile(w, indent, "#include <stdlib.h>\n\n")
+	compile(w, indent, "#include <stdlib.h>\n")
+	compile(w, indent, "#include <assert.h>\n")
+	compile(w, indent, "#include <string.h>\n")
 	for _, compiled := range globals {
 		compile(w, indent, compiled)
 	}
@@ -49,7 +55,7 @@ func (ir *intermediate) Compile(w *bufio.Writer) error {
 	return errors.Join(errs...)
 }
 
-func play(ir *intermediate) (globals []string, main []string, err error) {
+func Translate(ir *intermediate) (globals []string, main []string, err error) {
 	return parser.Compile(ir.Parsed(), &parser.Stack{BaseState()})
 }
 
@@ -85,7 +91,7 @@ func (s state) VetType(T parser.Type) error {
 	}
 	return nil
 }
-func (s state) VetVar(v parser.Var) error {
+func (s state) VetVar(v parser.Signature) error {
 	if isDefined(v, s.GetVars()) {
 		return fmt.Errorf("Variable \"%s\" is already defined.", v.GetName())
 	}
@@ -97,7 +103,7 @@ func (s state) VetFunc(f parser.Func) error {
 	}
 	return nil
 }
-func (s *state) Remove(v parser.Var) error {
+func (s *state) Remove(v parser.Signature) error {
 	for i, current := range s.vars {
 		if v.GetName() == current.GetName() {
 			s.vars = append(s.vars[:i], s.vars[i+1:]...)
