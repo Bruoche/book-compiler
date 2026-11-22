@@ -3,6 +3,7 @@ package our
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/Bruoche/book-compiler/pkg/parser"
 )
@@ -12,12 +13,14 @@ type VarDef struct {
 	val Val
 }
 
-var _ parser.Compilable = &VarDef{}
 var _ AssignationReciever = &VarDef{}
 
-func (v *VarDef) Declare(parser.State) (declare []string, assign []string, vars []parser.Var, types []parser.Type, err error) {
-	declare, assign, vars, err = v.val.T.DefineVar(v.GetName(), v.val.def)
-	return declare, assign, vars, []parser.Type{}, err
+func (v *VarDef) Declare(s *parser.Stack) (declare []string, assign []string, err error) {
+	declare, assign, vars, err := v.val.T.DefineVar(v.GetName(), v.val.def)
+	for _, v := range vars {
+		s.AddVar(v)
+	}
+	return declare, assign, err
 }
 
 func (v VarDef) GetName() string {
@@ -69,7 +72,7 @@ func (T SimpleType) SatisfiedBy(other parser.Type) bool {
 func (T SimpleType) DefineVar(name string, val string) (declare []string, assign []string, result []parser.Var, err error) {
 	v := New(name, T, false)
 	return []string{
-			fmt.Sprintf("%s %s = %s", T.signature, v.Signature(), val),
+			parser.Line("%s %s = %s", T.signature, v.Signature(), val),
 		},
 		[]string{},
 		[]parser.Var{v},
@@ -79,7 +82,7 @@ func (T SimpleType) CompileVal(val string) (string, error) {
 	return T.valCompilation(val)
 }
 func (T SimpleType) CompileAssign(signature string, val string) ([]string, error) {
-	return []string{fmt.Sprintf("%s = %s", signature, val)}, nil
+	return []string{parser.Line("%s = %s", signature, val)}, nil
 }
 
 type Type struct {
@@ -131,9 +134,9 @@ var String = Object(
 	},
 	func(name, val string) ([]string, []string, bool, error) {
 		declare := []string{}
-		assign := []string{fmt.Sprintf("%s = (char *) malloc(%d * sizeof(char))", name, len(val))}
+		assign := []string{parser.Line("%s = (char *) malloc(%d * sizeof(char))", name, len(val))}
 		for i, char := range val {
-			assign = append(assign, fmt.Sprintf("%s[%d] = '%s'", name, i, string(char)))
+			assign = append(assign, parser.Line("%s[%d] = '%s'", name, i, string(char)))
 		}
 		return declare, assign, true, nil
 	},
@@ -146,7 +149,33 @@ type Function struct {
 	Name         string
 	Return       SimpleType
 	Args         []VarSignature
-	Instructions []Instructable
+	Instructions []parser.Compilable
+}
+
+var _ parser.Compilable = Function{}
+
+func (f Function) Declare(parent *parser.Stack) (declared []string, assign []string, err error) {
+	funcState := state{}
+	stack := append(*parent, &funcState)
+	top, main, err := parser.Compile(f.Instructions, &stack)
+	if err != nil {
+		return
+	}
+	args := []string{}
+	for _, arg := range f.Args {
+		args = append(args, fmt.Sprintf("%s %s", arg.T.Signature(), arg.Signature()))
+	}
+	declared = append(declared, fmt.Sprintf("\n%s %s (%s) {", f.Return.Signature(), f.Signature(), strings.Join(args, ", ")))
+	indent := strings.Repeat(" ", TabSize)
+	for _, inst := range append(top, main...) {
+		declared = append(declared, indent+inst)
+	}
+	declared = append(declared, "}\n")
+	return
+}
+
+func (f Function) Signature() string {
+	return "f_" + f.Name
 }
 
 type VarSignature struct {
@@ -193,21 +222,6 @@ type AssignationReciever interface {
 	GetVal() Val
 }
 
-type Instruction struct {
-	action Instructable
-}
-
-var _ parser.Compilable = Instruction{}
-
-func (i Instruction) Declare(state parser.State) (declare []string, execute []string, vars []parser.Var, types []parser.Type, err error) {
-	execute, err = i.action.Compile(state)
-	return
-}
-
-type Instructable interface {
-	Compile(parser.State) ([]string, error)
-}
-
 type Assignation struct {
 	targetName string
 	val        Val
@@ -215,16 +229,16 @@ type Assignation struct {
 
 var _ AssignationReciever = &Assignation{}
 
-func (a Assignation) Declare(s parser.State) (declare []string, main []string, result []parser.Var, types []parser.Type, err error) {
-	target, ok := VarIn(s, a.targetName)
+func (a Assignation) Declare(s *parser.Stack) (declare []string, main []string, err error) {
+	target, ok := VarIn(s.GetVars(), a.targetName)
 	if !ok {
-		return declare, main, result, types, fmt.Errorf("Variable \"%s\" is undefined. Cannot assign a value to it. Please use \":=\" for implicit declaration.", a.targetName)
+		return declare, main, fmt.Errorf("Variable \"%s\" is undefined. Cannot assign a value to it. Please use \":=\" for implicit declaration.", a.targetName)
 	}
 	if !target.Type().SatisfiedBy(a.val.T) {
-		return declare, main, result, types, fmt.Errorf("Cannot assign value \"%s\" of type %s to variable %s of type %s", a.val.def, a.val.T.GetName(), target.GetName(), target.Type().GetName())
+		return declare, main, fmt.Errorf("Cannot assign value \"%s\" of type %s to variable %s of type %s", a.val.def, a.val.T.GetName(), target.GetName(), target.Type().GetName())
 	}
 	main, err = a.val.T.CompileAssign(target.Signature(), a.val.def)
-	return []string{}, main, []parser.Var{}, []parser.Type{}, err
+	return []string{}, main, err
 }
 
 func (a *Assignation) Assign(new Val) {

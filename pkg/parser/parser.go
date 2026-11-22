@@ -13,43 +13,130 @@ type IR interface {
 }
 
 type Compilable interface {
-	Declare(State) (declared []string, assign []string, vars []Var, types []Type, err error)
+	Declare(*Stack) (declared []string, assign []string, err error)
+}
+
+type Stack []State
+
+func (s Stack) GetTypes() []Type {
+	types := []Type{}
+	for _, state := range s {
+		types = append(types, state.GetTypes()...)
+	}
+	return types
+}
+func (s Stack) GetVars() []Var {
+	vars := []Var{}
+	for _, state := range s {
+		vars = append(vars, state.GetVars()...)
+	}
+	return vars
+}
+func (s Stack) AddVar(v Var) error {
+	for _, state := range s {
+		err := state.VetVar(v)
+		if err != nil {
+			return err
+		}
+	}
+	if !s.hasType(v.Type()) {
+		return fmt.Errorf("Unknown type %s assigned to variable %s.", v.Type().GetName(), v.GetName())
+	}
+	s.top().NewVar(v)
+	return nil
+}
+func (s Stack) AddType(T Type) error {
+	for _, state := range s {
+		err := state.VetType(T)
+		if err != nil {
+			return err
+		}
+	}
+	s.top().NewType(T)
+	return nil
+}
+func (s Stack) AddFunc(f Func) error {
+	for _, state := range s {
+		err := state.VetFunc(f)
+		if err != nil {
+			return err
+		}
+		for _, arg := range f.Args() {
+			err := state.VetVar(arg)
+			if err != nil {
+				return fmt.Errorf("Error creating argument for function \"%s\": %s", f.GetName(), err)
+			}
+		}
+	}
+	if !s.hasType(f.Return()) {
+		return fmt.Errorf("Unknown type \"%s\" returned by the function %s", f.Return().GetName(), f.GetName())
+	}
+	for _, arg := range f.Args() {
+		if !s.hasType(arg.Type()) {
+			return fmt.Errorf("Error creating argument for function \"%s\": The type %s used for variable %s is undefined", f.GetName(), arg.Type().GetName(), arg.GetName())
+		}
+	}
+	s.top().NewFunc(f)
+	return nil
+}
+func (s Stack) hasType(T Type) bool {
+	for _, state := range s {
+		for _, defined := range state.GetTypes() {
+			if defined.GetName() == T.GetName() {
+				return true
+			}
+		}
+	}
+	return false
+}
+func (s Stack) Pop() (free []string, err error) {
+	for _, v := range s.top().GetVars() {
+		if v.Allocated() {
+			free = append(free, fmt.Sprintf("free(%s)", v.Signature()))
+			err := s.top().Remove(v)
+			if err != nil {
+				return free, err
+			}
+		}
+	}
+	return free, nil
+}
+func (s Stack) top() State {
+	if len(s) <= 0 {
+		return nil
+	}
+	return s[len(s)-1]
 }
 
 type State interface {
 	GetTypes() []Type
 	GetVars() []Var
-	NewType(Type) error
-	NewVar(Var) error
+	GetFuncs() []Func
+	NewType(Type)
+	NewVar(Var)
+	NewFunc(Func)
+	VetType(Type) error
+	VetVar(Var) error
+	VetFunc(Func) error
+	Remove(Var) error
 }
 
-func Compile(ir IR, state State) (globals []string, main []string, err error) {
-	for _, compilable := range ir.Parsed() {
-		declared, assign, vars, types, err := compilable.Declare(state)
+func Compile(instructions []Compilable, stack *Stack) (globals []string, main []string, err error) {
+	for _, compilable := range instructions {
+		declared, assign, err := compilable.Declare(stack)
 		if err != nil {
 			return globals, main, fmt.Errorf("Error compiling: %s", err)
-		}
-		for _, T := range types {
-			err := state.NewType(T)
-			if err != nil {
-				return globals, main, err
-			}
-		}
-		for _, v := range vars {
-			err := state.NewVar(v)
-			if err != nil {
-				return globals, main, err
-			}
 		}
 		globals = append(globals, declared...)
 		main = append(main, assign...)
 	}
-	for _, v := range state.GetVars() {
-		if v.Allocated() {
-			main = append(main, fmt.Sprintf("free(%s)", v.Signature()))
-		}
-	}
-	return globals, main, nil
+	freed, err := stack.Pop()
+	main = append(main, freed...)
+	return globals, main, err
+}
+
+func Line(format string, vals ...any) string {
+	return fmt.Sprintf(format+";\n", vals...)
 }
 
 type Type interface {
@@ -64,6 +151,12 @@ type Var interface {
 	Translatable
 	Type() Type
 	Allocated() bool
+}
+
+type Func interface {
+	Translatable
+	Return() Type
+	Args() []Var
 }
 
 type Translatable interface {

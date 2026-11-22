@@ -96,6 +96,10 @@ func process(path string, r *bufio.Reader) (parser.IR, error) {
 					c.Add(last)
 					return c, nil
 				}
+				_, done = object.(our.Empty)
+				if done {
+					return c, nil
+				}
 				return c, err
 			}
 			return c, tracker.Throw(err)

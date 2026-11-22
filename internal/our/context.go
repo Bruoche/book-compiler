@@ -8,10 +8,6 @@ import (
 	"github.com/Bruoche/book-compiler/pkg/parser"
 )
 
-func Line(format string, vals ...any) string {
-	return fmt.Sprintf(format+";\n", vals...)
-}
-
 type intermediate struct {
 	parsed []parser.Compilable
 }
@@ -41,12 +37,12 @@ func (ir *intermediate) Compile(w *bufio.Writer) error {
 	indent := 0
 	compile(w, indent, "#include <stdlib.h>\n\n")
 	for _, compiled := range globals {
-		compile(w, indent, Line(compiled))
+		compile(w, indent, compiled)
 	}
 	compile(w, indent, "\nint main() {\n")
 	indented(w, indent, func(write func(string), indent int) {
 		for _, compiled := range main {
-			write(Line(compiled))
+			write(compiled)
 		}
 	})
 	compile(w, indent, "}\n")
@@ -54,12 +50,13 @@ func (ir *intermediate) Compile(w *bufio.Writer) error {
 }
 
 func play(ir *intermediate) (globals []string, main []string, err error) {
-	return parser.Compile(ir, BaseState())
+	return parser.Compile(ir.Parsed(), &parser.Stack{BaseState()})
 }
 
 type state struct {
 	types []parser.Type
 	vars  []parser.Var
+	funcs []parser.Func
 }
 
 var _ parser.State = &state{}
@@ -70,36 +67,44 @@ func (s state) GetTypes() []parser.Type {
 func (s state) GetVars() []parser.Var {
 	return s.vars
 }
-func (s *state) NewType(T parser.Type) error {
-	err := s.vetType(T)
-	if err != nil {
-		return err
-	}
+func (s state) GetFuncs() []parser.Func {
+	return s.funcs
+}
+func (s *state) NewType(T parser.Type) {
 	s.types = append(s.types, T)
-	return nil
 }
-func (s *state) NewVar(v parser.Var) error {
-	err := s.vetVar(v)
-	if err != nil {
-		return err
-	}
+func (s *state) NewVar(v parser.Var) {
 	s.vars = append(s.vars, v)
-	return nil
 }
-func (s state) vetType(T parser.Type) error {
+func (s *state) NewFunc(f parser.Func) {
+	s.funcs = append(s.funcs, f)
+}
+func (s state) VetType(T parser.Type) error {
 	if isDefined(T, s.types) {
 		return fmt.Errorf("A type named \"%s\" already exist. Cannot define two types of the same name.", T.GetName())
 	}
 	return nil
 }
-func (s state) vetVar(v parser.Var) error {
-	if !isDefined(v.Type(), s.GetTypes()) {
-		return fmt.Errorf("Unknown type %s used in assignation of variable %s", v.Type().GetName(), v.GetName())
-	}
+func (s state) VetVar(v parser.Var) error {
 	if isDefined(v, s.GetVars()) {
 		return fmt.Errorf("Variable \"%s\" is already defined.", v.GetName())
 	}
 	return nil
+}
+func (s state) VetFunc(f parser.Func) error {
+	if isDefined(f, s.funcs) {
+		return fmt.Errorf("A function named \"%s\" already exists.", f.GetName())
+	}
+	return nil
+}
+func (s *state) Remove(v parser.Var) error {
+	for i, current := range s.vars {
+		if v.GetName() == current.GetName() {
+			s.vars = append(s.vars[:i], s.vars[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("The variable %s doesn't exist. It cannot be removed from state.", v.GetName())
 }
 
 func BaseState() *state {
@@ -111,8 +116,8 @@ func BaseState() *state {
 	}
 }
 
-func VarIn(s parser.State, name string) (parser.Var, bool) {
-	for _, v := range s.GetVars() {
+func VarIn(vars []parser.Var, name string) (parser.Var, bool) {
+	for _, v := range vars {
 		if v.GetName() == name {
 			return v, true
 		}
