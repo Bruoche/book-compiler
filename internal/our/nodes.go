@@ -16,7 +16,7 @@ type Subject struct {
 
 var startInstruction = parser.Make(
 	"start_instruction",
-	func(_ Empty, char byte) (Subject, any) {
+	func(_ Empty, char byte) (Subject, parser.Compilable) {
 		return Subject{
 			name: string(char),
 		}, nil
@@ -24,7 +24,7 @@ var startInstruction = parser.Make(
 )
 var subject = parser.Make(
 	"start_instruction",
-	func(s Subject, char byte) (Subject, any) {
+	func(s Subject, char byte) (Subject, parser.Compilable) {
 		s.name = s.name + string(char)
 		return s, nil
 	},
@@ -39,7 +39,7 @@ var startDef = parser.Make(
 )
 var startDefinedVar = parser.Make(
 	"define_with_val",
-	func(s Subject, char byte) (Assignable, any) {
+	func(s Subject, char byte) (AssignationReciever, parser.Compilable) {
 		return &VarDef{
 			Name: s.name,
 			val:  Val{},
@@ -48,7 +48,7 @@ var startDefinedVar = parser.Make(
 )
 var assignVal = parser.Make(
 	"assign_val",
-	func(s Subject, char byte) (Assignable, any) {
+	func(s Subject, char byte) (AssignationReciever, parser.Compilable) {
 		return &Assignation{
 			targetName: s.name,
 			val:        Val{},
@@ -56,14 +56,14 @@ var assignVal = parser.Make(
 	},
 )
 
-func DefValStart(val func(char byte) Val) func(Assignable, byte) (Assignable, any) {
-	return func(a Assignable, char byte) (Assignable, any) {
+func DefValStart(val func(char byte) Val) func(AssignationReciever, byte) (AssignationReciever, parser.Compilable) {
+	return func(a AssignationReciever, char byte) (AssignationReciever, parser.Compilable) {
 		a.Assign(val(char))
 		return a, nil
 	}
 }
 
-var DefValAppend = func(a Assignable, char byte) (Assignable, any) {
+var DefValAppend = func(a AssignationReciever, char byte) (AssignationReciever, parser.Compilable) {
 	v := a.GetVal()
 	v.def += string(char)
 	a.Assign(v)
@@ -98,11 +98,11 @@ var DefinedVarStr = parser.Make(
 )
 var DefinedVarReady = parser.Make(
 	"defined_str_val",
-	parser.Pass[Assignable](),
+	parser.Pass[AssignationReciever](),
 )
 var DefinedVarDone = parser.Make(
 	"end",
-	func(a Assignable, char byte) (Empty, any) {
+	func(a AssignationReciever, char byte) (Empty, parser.Compilable) {
 		return Empty{}, a
 	},
 )
@@ -183,7 +183,7 @@ func vals() {
 	)
 }
 
-func val(start *parser.Node[Assignable, Assignable], assign *parser.Node[Assignable, Assignable], links ...parser.Linkable[Assignable]) {
+func val(start *parser.Node[AssignationReciever, AssignationReciever], assign *parser.Node[AssignationReciever, AssignationReciever], links ...parser.Linkable[AssignationReciever]) {
 	start.Has(
 		links...,
 	)

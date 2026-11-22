@@ -31,7 +31,7 @@ func compile(filename string) error {
 	return nil
 }
 
-func Read(filename string) (parser.Context, error) {
+func Read(filename string) (parser.IR, error) {
 	path := fmt.Sprintf("./%s.bk", filename)
 	f, err := os.Open(path)
 	if err != nil {
@@ -46,7 +46,7 @@ func Read(filename string) (parser.Context, error) {
 	return c, nil
 }
 
-func Write(c parser.Context, filename string) error {
+func Write(c parser.IR, filename string) error {
 	path := fmt.Sprintf("./%s.c", filename)
 	f, err := os.Create(path)
 	if err != nil {
@@ -64,10 +64,10 @@ func Write(c parser.Context, filename string) error {
 	return err
 }
 
-func process(path string, r *bufio.Reader) (parser.Context, error) {
+func process(path string, r *bufio.Reader) (parser.IR, error) {
 	var ignored = parser.Lookup{}
 	ignored['\r'] = true
-	var c parser.Context = our.Context()
+	var c parser.IR = our.IR()
 	var node parser.Processor = &our.Root
 	var object any = our.Empty{}
 	tracker := PositionalTracker{
@@ -84,24 +84,19 @@ func process(path string, r *bufio.Reader) (parser.Context, error) {
 				return c, tracker.Throw(err)
 			}
 			if defined != nil {
-				err := c.Add(defined)
-				if err != nil {
-					return c, err
-				}
+				c.Add(defined)
 			}
 			object = node.Get()
 		}
 		char, err = r.ReadByte()
 		if err != nil {
 			if err == io.EOF {
-				_, done := object.(our.Empty)
-				if !done {
-					err := c.Add(object)
-					if err != nil {
-						return c, err
-					}
+				last, done := object.(parser.Compilable)
+				if done {
+					c.Add(last)
+					return c, nil
 				}
-				return c, nil
+				return c, err
 			}
 			return c, tracker.Throw(err)
 		}

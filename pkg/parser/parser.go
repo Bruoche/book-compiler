@@ -6,15 +6,79 @@ import (
 	"strings"
 )
 
-type Context interface {
-	Add(object any) error
+type IR interface {
+	Add(object Compilable)
 	Compile(*bufio.Writer) error
+	Parsed() []Compilable
+}
+
+type Compilable interface {
+	Declare(State) (declared []string, assign []string, vars []Var, types []Type, err error)
+}
+
+type State interface {
+	GetTypes() []Type
+	GetVars() []Var
+	NewType(Type) error
+	NewVar(Var) error
+}
+
+func Compile(ir IR, state State) (globals []string, main []string, err error) {
+	for _, compilable := range ir.Parsed() {
+		declared, assign, vars, types, err := compilable.Declare(state)
+		if err != nil {
+			return globals, main, fmt.Errorf("Error compiling: %s", err)
+		}
+		for _, T := range types {
+			err := state.NewType(T)
+			if err != nil {
+				return globals, main, err
+			}
+		}
+		for _, v := range vars {
+			err := state.NewVar(v)
+			if err != nil {
+				return globals, main, err
+			}
+		}
+		globals = append(globals, declared...)
+		main = append(main, assign...)
+	}
+	for _, v := range state.GetVars() {
+		if v.Allocated() {
+			main = append(main, fmt.Sprintf("free(%s)", v.Signature()))
+		}
+	}
+	return globals, main, nil
+}
+
+type Type interface {
+	Translatable
+	DefineVar(name string, val string) (declare []string, assign []string, result []Var, err error)
+	CompileVal(val string) (string, error)
+	CompileAssign(name string, val string) ([]string, error)
+	SatisfiedBy(Type) bool
+}
+
+type Var interface {
+	Translatable
+	Type() Type
+	Allocated() bool
+}
+
+type Translatable interface {
+	Namable
+	Signature() string
+}
+
+type Namable interface {
+	GetName() string
 }
 
 type Lookup [256]bool
 
 type Processor interface {
-	Try(any, byte) (defined any, err error)
+	Try(any, byte) (defined Compilable, err error)
 	Get() any
 	Next(byte) (Processor, error)
 }
@@ -22,11 +86,11 @@ type Processor interface {
 type Node[I, O any] struct {
 	name    string
 	links   []Linkable[O]
-	process func(I, byte) (O, any)
+	process func(I, byte) (O, Compilable)
 	result  O
 }
 
-func Make[I, O any](name string, process func(I, byte) (O, any)) Node[I, O] {
+func Make[I, O any](name string, process func(I, byte) (O, Compilable)) Node[I, O] {
 	var new O
 	return Node[I, O]{
 		name:    name,
@@ -46,13 +110,13 @@ func (n *Node[I, O]) Has(nodes ...Linkable[O]) {
 	n.links = nodes
 }
 
-func (n *Node[I, O]) Process(in I, char byte) any {
+func (n *Node[I, O]) Process(in I, char byte) Compilable {
 	result, returned := n.process(in, char)
 	n.result = result
 	return returned
 }
 
-func (n *Node[I, O]) Try(in any, char byte) (any, error) {
+func (n *Node[I, O]) Try(in any, char byte) (Compilable, error) {
 	valid, ok := in.(I)
 	if !ok {
 		return nil, fmt.Errorf("Compiler error: got type %T inside %s instead of expected type %T", in, n.name, valid)
@@ -110,7 +174,7 @@ func merge(streak []byte, allowed []string) []string {
 
 type Linkable[I any] interface {
 	Processor
-	Process(I, byte) any
+	Process(I, byte) Compilable
 	CanHandle(byte) bool
 	GetName() string
 	Handled() []string
@@ -168,8 +232,8 @@ func (l Link[I, O]) Handled() []string {
 	return handled
 }
 
-func Pass[IO any]() func(IO, byte) (IO, any) {
-	return func(io IO, char byte) (IO, any) {
+func Pass[IO any]() func(IO, byte) (IO, Compilable) {
+	return func(io IO, char byte) (IO, Compilable) {
 		return io, nil
 	}
 }
