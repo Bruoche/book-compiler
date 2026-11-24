@@ -10,6 +10,61 @@ var Root = parser.Make(
 	parser.Pass[Empty](),
 )
 
+var ProcedureCall = parser.Make(
+	"call_func",
+	parser.Pass[Empty](),
+)
+
+var startCallFunc = parser.Make(
+	"call_func",
+	func(_ Empty, char byte) (ProcCall, parser.Compilable) {
+		return ProcCall{
+			args:    []Arg{},
+			name:    string(char),
+			valUsed: false,
+		}, nil
+	},
+)
+
+var callFunc = parser.Make(
+	"call_func",
+	func(f ProcCall, char byte) (ProcCall, parser.Compilable) {
+		f.name += string(char)
+		return f, nil
+	},
+)
+
+var readyCallArg = parser.Make(
+	"call_func_arg",
+	parser.Pass[ProcCall](),
+)
+
+var addVarArg = parser.Make(
+	"call_func_arg",
+	func(f ProcCall, char byte) (ProcCall, parser.Compilable) {
+		f.args = append(f.args, &varVal{
+			string(char),
+		})
+		return f, nil
+	},
+)
+
+var writeArg = parser.Make(
+	"call_func_arg",
+	func(f ProcCall, char byte) (ProcCall, parser.Compilable) {
+		last := len(f.args) - 1
+		f.args[last].Add(char)
+		return f, nil
+	},
+)
+
+var endCall = parser.Make(
+	"end_call",
+	func(f ProcCall, char byte) (Empty, parser.Compilable) {
+		return Empty{}, f
+	},
+)
+
 type Subject struct {
 	name string
 }
@@ -107,6 +162,7 @@ var DefinedVarDone = parser.Make(
 	},
 )
 var root = parser.Ignoring(' ').Has(
+	parser.Bind(&ProcedureCall, '-'),
 	parser.Bind(&startInstruction, chars.Uncapped...),
 	parser.Bind(&Root, '\n'),
 )
@@ -118,9 +174,41 @@ func Init() {
 	instructions()
 }
 func instructions() {
+	funcCall()
 	subjects()
 	vars()
 	vals()
+}
+func funcCall() {
+	ProcedureCall.Has(parser.Ignoring(' ').Has(
+		parser.Bind(&startCallFunc, chars.Uncapped...),
+	)...)
+	startCallFunc.Has(
+		parser.Bind(&callFunc, chars.Letters...),
+	)
+	callFunc.Has(
+		parser.Bind(&endCall, '\n'),
+		parser.Bind(&readyCallArg, ' '),
+		parser.Bind(&callFunc, chars.Letters...),
+	)
+	readyCallArg.Has(parser.Ignoring(' ').Has(
+		parser.Bind(&endCall, '\n'),
+		parser.Bind(&addVarArg, chars.Uncapped...),
+	)...)
+	argCall := parser.Prep(
+		parser.Bind(&writeArg, chars.Letters...),
+		parser.Bind(&readyCallArg, ' '),
+		parser.Bind(&endCall, '\n'),
+	)
+	addVarArg.Has(
+		argCall...,
+	)
+	writeArg.Has(
+		argCall...,
+	)
+	endCall.Has(
+		root...,
+	)
 }
 func subjects() {
 	subjectAction := parser.Prep(

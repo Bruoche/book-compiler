@@ -36,12 +36,18 @@ func (v VarDef) GetVal() Val {
 }
 
 func isDefined[T parser.Namable](o parser.Namable, defined []T) bool {
+	_, found := get(o, defined)
+	return found
+}
+
+func get[T parser.Namable](o parser.Namable, defined []T) (T, bool) {
 	for _, def := range defined {
 		if def.GetName() == o.GetName() {
-			return true
+			return def, true
 		}
 	}
-	return false
+	var none T
+	return none, false
 }
 
 type SimpleType struct {
@@ -168,6 +174,15 @@ type Function struct {
 var _ parser.Compilable = Function{}
 var _ parser.Func = Function{}
 
+func Func(name string, ret parser.Type, args []parser.Signature, instructions []parser.Compilable) Function {
+	return Function{
+		name:         name,
+		returnType:   ret,
+		args:         args,
+		instructions: instructions,
+	}
+}
+
 func (f Function) GetName() string {
 	return f.name
 }
@@ -193,7 +208,7 @@ func (f Function) Declare(parent *parser.Stack) (declared []string, assign []str
 	if f.Return() != nil {
 		ret = f.Return().Signature()
 	}
-	declared = append(declared, fmt.Sprintf("\n%s %s (%s) {", ret, f.Signature(), strings.Join(args, ", ")))
+	declared = append(declared, fmt.Sprintf("\n%s %s (%s) {\n", ret, f.Signature(), strings.Join(args, ", ")))
 	indent := strings.Repeat(" ", TabSize)
 	for _, inst := range append(top, main...) {
 		declared = append(declared, indent+inst)
@@ -206,25 +221,113 @@ func (f Function) Signature() string {
 	return "f_" + f.name
 }
 
-var Realloc = Function{
-	name:       "_realloc",
-	returnType: nil,
-	args: []parser.Signature{
+var Realloc = Func(
+	"_realloc",
+	nil,
+	[]parser.Signature{
 		VarSignature{"_str1", String},
 		VarSignature{"_len1", Int},
 		VarSignature{"_str2", String},
 		VarSignature{"_len2", Int},
 	},
-	instructions: []parser.Compilable{
+	[]parser.Compilable{
 		RawInst{
 			"if (v__len1 != v__len2) {\n",
-			parser.Line("  v__len1 = v__len2"),
-			parser.Line("  v__str1 = (char *) realloc(v__str1, v__len1 * sizeof(char) + 1)"),
-			parser.Line("  assert(v__str1 != NULL)"),
+			"  v__len1 = v__len2;\n",
+			"  char *_tmp_realloc = (char *) realloc(v__str1, v__len1 * sizeof(char) + 1);\n",
+			"  if (_tmp_realloc == NULL) {\n",
+			"    printf(\"WARNING: Out of memory error, string could not be resized.\\n\");\n",
+			"  } else {\n",
+			"    v__str1 = _tmp_realloc;\n",
+			"  }\n",
 			"}\n",
-			parser.Line("strcpy(v__str1, v__str2)"),
+			"strcpy(v__str1, v__str2);\n",
 		},
 	},
+)
+
+var Print = Func(
+	"print",
+	nil,
+	[]parser.Signature{
+		VarSignature{"_str", String},
+	},
+	[]parser.Compilable{
+		RawInst{
+			"printf(\"%s\\n\", v__str);\n",
+		},
+	},
+)
+
+var Put = Func(
+	"put",
+	nil,
+	[]parser.Signature{
+		VarSignature{"_str", String},
+	},
+	[]parser.Compilable{
+		RawInst{
+			"printf(\"%s\", v__str);\n",
+		},
+	},
+)
+
+type Arg interface {
+	Add(byte)
+	ToVal(*parser.Stack) (Val, error)
+}
+
+type varVal struct {
+	name string
+}
+
+func (arg varVal) GetName() string {
+	return arg.name
+}
+func (arg *varVal) Add(char byte) {
+	arg.name += string(char)
+}
+func (arg varVal) ToVal(s *parser.Stack) (Val, error) {
+	v, ok := get(arg, s.GetVars())
+	if !ok {
+		return Val{}, fmt.Errorf("Cannot assign value of unknown variable \"%s\".", arg.name)
+	}
+	return Val{v.Signature(), v.Type()}, nil
+}
+
+var _ Arg = &varVal{}
+
+type ProcCall struct {
+	name    string
+	args    []Arg
+	valUsed bool
+}
+
+var _ parser.Compilable = ProcCall{}
+
+func (call ProcCall) Declare(s *parser.Stack) (declared []string, assign []string, err error) {
+	f, ok := get(call, s.GetFuncs())
+	if !ok {
+		return declared, assign, fmt.Errorf("Call to unknown function \"%s\"", call.GetName())
+	}
+	if f.Return() != nil {
+		// TODO warn value unused if pure function
+	}
+	args := []string{}
+	for _, arg := range call.args {
+		val, err := arg.ToVal(s)
+		if err != nil {
+			return declared, assign, fmt.Errorf("Error getting value from argument: %s", err)
+		}
+		args = append(args, val.def)
+	}
+	return []string{}, []string{
+		parser.Line("%s(%s)", f.Signature(), strings.Join(args, ", ")),
+	}, nil
+}
+
+func (fc ProcCall) GetName() string {
+	return fc.name
 }
 
 type VarSignature struct {

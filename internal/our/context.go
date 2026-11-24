@@ -16,6 +16,8 @@ func IR() *intermediate {
 	return &intermediate{
 		parsed: []parser.Compilable{
 			Realloc,
+			Print,
+			Put,
 		},
 	}
 }
@@ -40,8 +42,8 @@ func (ir *intermediate) Compile(w *bufio.Writer) error {
 	}
 	indent := 0
 	compile(w, indent, "#include <stdlib.h>\n")
-	compile(w, indent, "#include <assert.h>\n")
 	compile(w, indent, "#include <string.h>\n")
+	compile(w, indent, "#include <stdio.h>\n")
 	for _, compiled := range globals {
 		compile(w, indent, compiled)
 	}
@@ -115,6 +117,10 @@ func (s *state) Remove(v parser.Signature) error {
 
 func BaseState() *state {
 	return &state{
+		funcs: []parser.Func{
+			Print,
+			Put,
+		},
 		types: []parser.Type{
 			Int,
 			String,

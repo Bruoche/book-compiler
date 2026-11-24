@@ -32,6 +32,13 @@ func (s Stack) GetVars() []Var {
 	}
 	return vars
 }
+func (s Stack) GetFuncs() []Func {
+	funcs := []Func{}
+	for _, state := range s {
+		funcs = append(funcs, state.GetFuncs()...)
+	}
+	return funcs
+}
 func (s Stack) AddVar(v Var) error {
 	for _, state := range s {
 		err := state.VetVar(v)
@@ -234,7 +241,7 @@ func (n Node[I, O]) Next(char byte) (Processor, error) {
 		}
 		unhandled = append(unhandled, describe(linkable))
 	}
-	return nil, fmt.Errorf("%s: Unhandled char %s, expected: %s", n.name, string(char), strings.Join(unhandled, " or "))
+	return nil, fmt.Errorf("%s: Unhandled char %s, expected: %s", n.name, string(char), strings.Replace(strings.Join(unhandled, " or "), "\n", "\\n", -1))
 }
 
 func describe[T any](l Linkable[T]) string {
