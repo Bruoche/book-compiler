@@ -150,13 +150,17 @@ type Type interface {
 	Translatable
 	DefineVar(name string, val string) (declare []string, assign []string, result []Var, err error)
 	CompileVal(val string) (string, error)
-	CompileAssign(name string, val string) ([]string, error)
-	SatisfiedBy(Type) bool
+	Recieve(*Stack, string, Val) ([]string, error)
 }
 
 type Var interface {
 	Signature
 	Allocated() bool
+}
+
+type Val interface {
+	Signature() (string, error)
+	Type() Type
 }
 
 type Signature interface {

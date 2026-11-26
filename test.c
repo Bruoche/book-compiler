@@ -13,6 +13,7 @@ void f__realloc (char * v__str1, int v__len1, char * v__str2, int v__len2) {
     }
   }
   strcpy(v__str1, v__str2);
+  v__len1 = v__len2;
 }
 
 
@@ -34,8 +35,7 @@ int len_v_word;
 int main() {
   v_int = 67;
   v_salutation = strdup("Hello");
-  f__realloc(v_salutation, len_v_salutation, "Hello ", 6);
-  len_v_salutation = 6;
+  f__realloc(v_salutation, len_v_salutation, "Hello ", 9);
   f_put(v_salutation);
   v_word = strdup("Word!!");
   f_print(v_word);

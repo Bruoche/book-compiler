@@ -97,7 +97,7 @@ var startDefinedVar = parser.Make(
 	func(s Subject, char byte) (AssignationReciever, parser.Compilable) {
 		return &VarDef{
 			Name: s.name,
-			val:  Val{},
+			val:  RawVal{},
 		}, nil
 	},
 )
@@ -106,14 +106,16 @@ var assignVal = parser.Make(
 	func(s Subject, char byte) (AssignationReciever, parser.Compilable) {
 		return &Assignation{
 			targetName: s.name,
-			val:        Val{},
+			val:        RawVal{},
 		}, nil
 	},
 )
 
-func DefValStart(val func(char byte) Val) func(AssignationReciever, byte) (AssignationReciever, parser.Compilable) {
+func DefValStart(initialize func(char byte) (RawVal, parser.Type)) func(AssignationReciever, byte) (AssignationReciever, parser.Compilable) {
 	return func(a AssignationReciever, char byte) (AssignationReciever, parser.Compilable) {
-		a.Assign(val(char))
+		val, T := initialize(char)
+		a.Assign(val)
+		a.SetType(T)
 		return a, nil
 	}
 }
@@ -127,11 +129,11 @@ var DefValAppend = func(a AssignationReciever, char byte) (AssignationReciever, 
 
 var DefinedVarIntStart = parser.Make(
 	"define_int_val",
-	DefValStart(func(char byte) Val {
-		return Val{
+	DefValStart(func(char byte) (RawVal, parser.Type) {
+		return RawVal{
 			def: string(char),
 			T:   Int,
-		}
+		}, Int
 	}),
 )
 var DefinedVarInt = parser.Make(
@@ -140,11 +142,11 @@ var DefinedVarInt = parser.Make(
 )
 var DefinedVarStrStart = parser.Make(
 	"define_str_val",
-	DefValStart(func(char byte) Val {
-		return Val{
+	DefValStart(func(char byte) (RawVal, parser.Type) {
+		return RawVal{
 			def: "",
-			T:   String,
-		}
+			T:   RawString,
+		}, String
 	}),
 )
 var DefinedVarStr = parser.Make(

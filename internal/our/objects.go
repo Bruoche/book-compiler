@@ -10,29 +10,30 @@ import (
 
 type VarDef struct {
 	VarSignature
-	val Val
+	val RawVal
+	T   parser.Type
 }
 
 var _ AssignationReciever = &VarDef{}
 
 func (v *VarDef) Declare(s *parser.Stack) (declare []string, assign []string, err error) {
-	declare, assign, vars, err := v.val.T.DefineVar(v.GetName(), v.val.def)
+	declare, assign, vars, err := v.T.DefineVar(v.GetName(), v.val.def)
 	for _, v := range vars {
 		s.AddVar(v)
 	}
 	return declare, assign, err
 }
-
 func (v VarDef) GetName() string {
 	return v.Name
 }
-
-func (v *VarDef) Assign(new Val) {
+func (v *VarDef) Assign(new RawVal) {
 	v.val = new
 }
-
-func (v VarDef) GetVal() Val {
+func (v VarDef) GetVal() RawVal {
 	return v.val
+}
+func (v *VarDef) SetType(T parser.Type) {
+	v.T = T
 }
 
 func isDefined[T parser.Namable](o parser.Namable, defined []T) bool {
@@ -72,9 +73,6 @@ func (T SimpleType) GetName() string {
 func (T SimpleType) Signature() string {
 	return T.signature
 }
-func (T SimpleType) SatisfiedBy(other parser.Type) bool {
-	return T.GetName() == other.GetName()
-}
 func (T SimpleType) DefineVar(name string, val string) (declare []string, assign []string, result []parser.Var, err error) {
 	v := New(name, T, false)
 	return []string{
@@ -87,14 +85,37 @@ func (T SimpleType) DefineVar(name string, val string) (declare []string, assign
 func (T SimpleType) CompileVal(val string) (string, error) {
 	return T.valCompilation(val)
 }
-func (T SimpleType) CompileAssign(signature string, val string) ([]string, error) {
-	return []string{parser.Line("%s = %s", signature, val)}, nil
+func (T SimpleType) Recieve(s *parser.Stack, signature string, value parser.Val) ([]string, error) {
+	if value.Type().Signature() == T.Signature() {
+		val, err := value.Signature()
+		if err != nil {
+			return []string{}, err
+		}
+		return []string{parser.Line("%s = %s", signature, val)}, nil
+	}
+	return []string{}, fmt.Errorf("Type value of type %s cannot be assigned to variable of type %s", value.Type().GetName(), T.GetName())
 }
+
+type Ptr[T parser.Type] struct {
+	ref T
+}
+
+var _ parser.Type = &Ptr[parser.Type]{}
+
+func (ptr Ptr[T]) GetName() string {
+	return "Pointer to " + ptr.ref.GetName()
+}
+func (ptr Ptr[T]) Signature() string {
+	return " *" + ptr.ref.Signature()
+}
+func (ptr Ptr[T]) DefineVar(name string, val string) (declare []string, assign []string, result []parser.Var, err error)
+func (ptr Ptr[T]) CompileVal(val string) (string, error)
+func (ptr Ptr[T]) Recieve(*parser.Stack, string, parser.Val) ([]string, error)
 
 type Type struct {
 	SimpleType
 	declaration func(name string, val string) (declare []string, assign []string, alloc bool, err error)
-	assigation  func(name string, val string) ([]string, error)
+	assigation  func(name string, val parser.Val) ([]string, error)
 }
 
 var _ parser.Type = Type{}
@@ -104,7 +125,7 @@ func Object(
 	signature string,
 	valCompilation func(string) (string, error),
 	declaration func(signature string, val string) (declare []string, assign []string, alloc bool, err error),
-	assignation func(signature string, val string) ([]string, error),
+	assignation func(signature string, val parser.Val) ([]string, error),
 ) parser.Type {
 	return Type{
 		SimpleType:  Primitive(name, signature, valCompilation),
@@ -119,7 +140,7 @@ func (T Type) DefineVar(name string, val string) (declare []string, assign []str
 	v.allocated = allocated
 	return declare, assign, []parser.Var{v}, err
 }
-func (T Type) CompileAssign(signature string, val string) ([]string, error) {
+func (T Type) Recieve(s *parser.Stack, signature string, val parser.Val) ([]string, error) {
 	return T.assigation(signature, val)
 }
 
@@ -132,11 +153,13 @@ var Int = Primitive(
 	},
 )
 
+const strName = "String"
+
 var String = Object(
-	"String",
+	strName,
 	"char *",
 	func(val string) (string, error) {
-		return fmt.Sprintf("\"%s\"", val), nil
+		return fmt.Sprintf("v_%s", val), nil
 	},
 	func(name, val string) ([]string, []string, bool, error) {
 		declare := []string{
@@ -148,11 +171,36 @@ var String = Object(
 		}
 		return declare, assign, true, nil
 	},
-	func(name, val string) ([]string, error) {
-		return []string{
-			parser.Line("f__realloc(%s, len_%s, \"%s\", %d)", name, name, val, len(val)),
-			parser.Line("len_%s = %d", name, len(val)),
-		}, nil
+	func(name string, val parser.Val) ([]string, error) {
+		signature, err := val.Signature()
+		if err != nil {
+			return []string{}, err
+		}
+		switch val.Type().GetName() {
+		case strName:
+			return []string{
+				parser.Line("f__realloc(%s, len_%s, %s, len_%s)", name, name, signature, signature),
+			}, nil
+		case RawString.GetName():
+			return []string{
+				parser.Line("f__realloc(%s, len_%s, %s, %d)", name, name, signature, len(signature)+1),
+			}, nil
+		}
+		return []string{}, fmt.Errorf("Cannot assign value of type %s to %s", val.Type().GetName(), strName)
+	},
+)
+
+var RawString = Object(
+	"Raw String",
+	"char *",
+	func(val string) (string, error) {
+		return fmt.Sprintf("\"%s\"", val), nil
+	},
+	func(name, val string) ([]string, []string, bool, error) {
+		return []string{}, []string{}, false, fmt.Errorf("Cannot initialize a raw string variable (use normal String type).")
+	},
+	func(name string, val parser.Val) ([]string, error) {
+		return []string{}, fmt.Errorf("Cannot assign a value to a raw string value.")
 	},
 )
 
@@ -242,6 +290,7 @@ var Realloc = Func(
 			"  }\n",
 			"}\n",
 			"strcpy(v__str1, v__str2);\n",
+			"v__len1 = v__len2;\n",
 		},
 	},
 )
@@ -274,7 +323,7 @@ var Put = Func(
 
 type Arg interface {
 	Add(byte)
-	ToVal(*parser.Stack) (Val, error)
+	ToVal(*parser.Stack) (RawVal, error)
 }
 
 type varVal struct {
@@ -287,12 +336,12 @@ func (arg varVal) GetName() string {
 func (arg *varVal) Add(char byte) {
 	arg.name += string(char)
 }
-func (arg varVal) ToVal(s *parser.Stack) (Val, error) {
+func (arg varVal) ToVal(s *parser.Stack) (RawVal, error) {
 	v, ok := get(arg, s.GetVars())
 	if !ok {
-		return Val{}, fmt.Errorf("Cannot assign value of unknown variable \"%s\".", arg.name)
+		return RawVal{}, fmt.Errorf("Cannot assign value of unknown variable \"%s\".", arg.name)
 	}
-	return Val{v.Signature(), v.Type()}, nil
+	return RawVal{v.Signature(), v.Type()}, nil
 }
 
 var _ Arg = &varVal{}
@@ -375,13 +424,15 @@ type Assignable interface {
 
 type AssignationReciever interface {
 	parser.Compilable
-	Assign(Val)
-	GetVal() Val
+	Assign(RawVal)
+	GetVal() RawVal
+	SetType(parser.Type)
 }
 
 type Assignation struct {
 	targetName string
-	val        Val
+	val        RawVal
+	T          parser.Type
 }
 
 var _ AssignationReciever = &Assignation{}
@@ -391,28 +442,34 @@ func (a Assignation) Declare(s *parser.Stack) (declare []string, main []string, 
 	if !ok {
 		return declare, main, fmt.Errorf("Variable \"%s\" is undefined. Cannot assign a value to it. Please use \":=\" for implicit declaration.", a.targetName)
 	}
-	if !target.Type().SatisfiedBy(a.val.T) {
-		return declare, main, fmt.Errorf("Cannot assign value \"%s\" of type %s to variable %s of type %s", a.val.def, a.val.T.GetName(), target.GetName(), target.Type().GetName())
+	assignation, err := target.Type().Recieve(s, target.Signature(), a.GetVal())
+	if err != nil {
+		return declare, main, fmt.Errorf("Cannot assign value \"%s\" of type %s to variable %s of type %s: %s", a.val.def, a.val.T.GetName(), target.GetName(), target.Type().GetName(), err)
 	}
-	main, err = a.val.T.CompileAssign(target.Signature(), a.val.def)
-	return []string{}, main, err
+	return declare, assignation, err
 }
-
-func (a *Assignation) Assign(new Val) {
+func (a *Assignation) Assign(new RawVal) {
 	a.val = new
 }
-
-func (a Assignation) GetVal() Val {
+func (a Assignation) GetVal() RawVal {
 	return a.val
 }
+func (a *Assignation) SetType(T parser.Type) {
+	a.T = T
+}
 
-type Val struct {
+type RawVal struct {
 	def string
 	T   parser.Type
 }
 
-func (v Val) Compile() (string, error) {
+var _ parser.Val = &RawVal{}
+
+func (v RawVal) Signature() (string, error) {
 	return v.T.CompileVal(v.def)
+}
+func (v RawVal) Type() parser.Type {
+	return v.T
 }
 
 type Empty struct{}
