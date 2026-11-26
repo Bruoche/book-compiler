@@ -44,6 +44,7 @@ func (ir *intermediate) Compile(w *bufio.Writer) error {
 	compile(w, indent, "#include <stdlib.h>\n")
 	compile(w, indent, "#include <string.h>\n")
 	compile(w, indent, "#include <stdio.h>\n")
+	compile(w, indent, "\n")
 	for _, compiled := range globals {
 		compile(w, indent, compiled)
 	}

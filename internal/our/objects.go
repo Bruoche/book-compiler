@@ -100,17 +100,27 @@ type Ptr[T parser.Type] struct {
 	ref T
 }
 
+func Ref[T parser.Type](t T) Ptr[T] {
+	return Ptr[T]{t}
+}
+
 var _ parser.Type = &Ptr[parser.Type]{}
 
 func (ptr Ptr[T]) GetName() string {
 	return "Pointer to " + ptr.ref.GetName()
 }
 func (ptr Ptr[T]) Signature() string {
-	return " *" + ptr.ref.Signature()
+	return ptr.ref.Signature() + "*"
 }
-func (ptr Ptr[T]) DefineVar(name string, val string) (declare []string, assign []string, result []parser.Var, err error)
-func (ptr Ptr[T]) CompileVal(val string) (string, error)
-func (ptr Ptr[T]) Recieve(*parser.Stack, string, parser.Val) ([]string, error)
+func (ptr Ptr[T]) DefineVar(name string, val string) (declare []string, assign []string, result []parser.Var, err error) {
+	return declare, assign, result, fmt.Errorf("Cannot define a Ptr var through this generic type, do it explicitly.")
+}
+func (ptr Ptr[T]) CompileVal(val string) (string, error) {
+	return "*" + ptr.ref.Signature(), nil
+}
+func (ptr Ptr[T]) Recieve(s *parser.Stack, signature string, v parser.Val) ([]string, error) {
+	return []string{}, fmt.Errorf("Cannot assign to a pointer through this generic type, do it explicitly.")
+}
 
 type Type struct {
 	SimpleType
@@ -161,13 +171,17 @@ var String = Object(
 	func(val string) (string, error) {
 		return fmt.Sprintf("v_%s", val), nil
 	},
-	func(name, val string) ([]string, []string, bool, error) {
+	func(signature, val string) ([]string, []string, bool, error) {
 		declare := []string{
-			parser.Line("char *%s", name),
-			parser.Line("int len_%s", name),
+			parser.Line("char *%s", signature),
+			parser.Line("int len_%s = %d", signature, len(val)),
 		}
 		assign := []string{
-			parser.Line("%s = strdup(\"%s\")", name, val),
+			parser.Line("%s = strdup(\"%s\")", signature, val),
+			fmt.Sprintf("if (%s == NULL) {", signature),
+			fmt.Sprintf("  fprintf(stderr, \"ERROR OOM: Out of memory, string \\\"%s\\\" could not be duplicated into %s.\\n\"); ", val, signature),
+			"  exit(1);",
+			"}\n",
 		}
 		return declare, assign, true, nil
 	},
@@ -179,11 +193,11 @@ var String = Object(
 		switch val.Type().GetName() {
 		case strName:
 			return []string{
-				parser.Line("f__realloc(%s, len_%s, %s, len_%s)", name, name, signature, signature),
+				parser.Line("f__realloc(&%s, &len_%s, %s, len_%s)", name, name, signature, signature),
 			}, nil
 		case RawString.GetName():
 			return []string{
-				parser.Line("f__realloc(%s, len_%s, %s, %d)", name, name, signature, len(signature)+1),
+				parser.Line("f__realloc(&%s, &len_%s, %s, %d)", name, name, signature, len(signature)-2),
 			}, nil
 		}
 		return []string{}, fmt.Errorf("Cannot assign value of type %s to %s", val.Type().GetName(), strName)
@@ -256,7 +270,7 @@ func (f Function) Declare(parent *parser.Stack) (declared []string, assign []str
 	if f.Return() != nil {
 		ret = f.Return().Signature()
 	}
-	declared = append(declared, fmt.Sprintf("\n%s %s (%s) {\n", ret, f.Signature(), strings.Join(args, ", ")))
+	declared = append(declared, fmt.Sprintf("%s %s (%s) {\n", ret, f.Signature(), strings.Join(args, ", ")))
 	indent := strings.Repeat(" ", TabSize)
 	for _, inst := range append(top, main...) {
 		declared = append(declared, indent+inst)
@@ -273,24 +287,23 @@ var Realloc = Func(
 	"_realloc",
 	nil,
 	[]parser.Signature{
-		VarSignature{"_str1", String},
-		VarSignature{"_len1", Int},
+		VarSignature{"_str1", Ref(String)},
+		VarSignature{"_len1", Ref(Int)},
 		VarSignature{"_str2", String},
 		VarSignature{"_len2", Int},
 	},
 	[]parser.Compilable{
 		RawInst{
-			"if (v__len1 != v__len2) {\n",
-			"  v__len1 = v__len2;\n",
-			"  char *_tmp_realloc = (char *) realloc(v__str1, v__len1 * sizeof(char) + 1);\n",
-			"  if (_tmp_realloc == NULL) {\n",
-			"    printf(\"WARNING: Out of memory error, string could not be resized.\\n\");\n",
-			"  } else {\n",
-			"    v__str1 = _tmp_realloc;\n",
+			"if (*v__len1 != v__len2) {\n",
+			"  char *_tmp_realloc = (char *) realloc(*v__str1, v__len2 * sizeof(char) + 1);\n",
+			"  if (_tmp_realloc == NULL) { ",
+			"    fprintf(stderr, \"ERROR OOM: Out of memory, string could not be resized.\\n\"); ",
+			"    exit(1); ",
 			"  }\n",
+			"  *v__str1 = _tmp_realloc;\n",
+			"  *v__len1 = v__len2;\n",
 			"}\n",
-			"strcpy(v__str1, v__str2);\n",
-			"v__len1 = v__len2;\n",
+			"memcpy(*v__str1, v__str2, v__len2+1);\n",
 		},
 	},
 )
