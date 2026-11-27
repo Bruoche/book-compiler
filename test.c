@@ -20,21 +20,21 @@ void f_put (char * v__str) {
   printf("%s", v__str);
 }
 
-int v_int = 42;
-char *v_salutation;
-int len_v_salutation = 5;
-char *v_word;
-int len_v_word = 6;
+int v_num = 1;
+char *v_hi;
+int len_v_hi = 5;
+char *v_name;
+int len_v_name = 5;
 
 int main() {
-  v_int = 67;
-  v_salutation = strdup("Hello");
-  if (v_salutation == NULL) {    fprintf(stderr, "ERROR OOM: Out of memory, string \"Hello\" could not be duplicated into v_salutation.\n");     exit(1);  }
-  f__realloc(&v_salutation, &len_v_salutation, "Hello ", 6);
-  f_put(v_salutation);
-  v_word = strdup("Word!!");
-  if (v_word == NULL) {    fprintf(stderr, "ERROR OOM: Out of memory, string \"Word!!\" could not be duplicated into v_word.\n");     exit(1);  }
-  f_print(v_word);
-  free(v_salutation);
-  free(v_word);
+  v_hi = strdup("hello");
+  if (v_hi == NULL) {    fprintf(stderr, "ERROR OOM: Out of memory, string \"hello\" could not be duplicated into v_hi.\n");     exit(1);  }
+  f__realloc(&v_hi, &len_v_hi, "Hello ", 6);
+  v_num = 4;
+  f_put(v_hi);
+  v_name = strdup("Alice");
+  if (v_name == NULL) {    fprintf(stderr, "ERROR OOM: Out of memory, string \"Alice\" could not be duplicated into v_name.\n");     exit(1);  }
+  f_print(v_name);
+  free(v_hi);
+  free(v_name);
 }

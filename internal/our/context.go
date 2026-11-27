@@ -113,7 +113,7 @@ func (s *state) Remove(v parser.Signature) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("The variable %s doesn't exist. It cannot be removed from state.", v.GetName())
+	return fmt.Errorf("The variable \"%s\" doesn't exist. It cannot be removed from state.", v.GetName())
 }
 
 func BaseState() *state {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 
 	"github.com/Bruoche/book-compiler/internal/our"
 	"github.com/Bruoche/book-compiler/pkg/parser"
@@ -13,22 +14,46 @@ import (
 func main() {
 	fmt.Println("Compiling...")
 	our.Init()
-	err := compile("test")
+	name := "test"
+	sources, err := compile(name)
+	handle(err)
+	err = run(sources, name)
+	handle(err)
+}
+
+func handle(err error) {
 	if err != nil {
 		fmt.Println(err)
+		os.Exit(1)
 	}
 }
 
-func compile(filename string) error {
-	c, err := Read(filename)
+func run(path, output string) error {
+	build := exec.Command("wsl", "gcc", path, "-o", output)
+	out, err := build.CombinedOutput()
+	fmt.Println(string(out))
 	if err != nil {
-		return fmt.Errorf("Syntax error: %s\n", err)
+		return fmt.Errorf("C Compilation error: %s", err)
 	}
-	err = Write(c, filename)
+	run := exec.Command("wsl", "./"+output)
+	out, err = run.CombinedOutput()
+	fmt.Println(string(out))
 	if err != nil {
-		return fmt.Errorf("Error during compilation: %s\n", err)
+		return fmt.Errorf("Runtime error: %s", err)
 	}
 	return nil
+}
+
+func compile(filename string) (string, error) {
+	c, err := Read(filename)
+	if err != nil {
+		return "", fmt.Errorf("Syntax error: %s\n", err)
+	}
+	result, err := Write(c, filename)
+	if err != nil {
+		return "", fmt.Errorf("Error during compilation: %s\n", err)
+	}
+	return result, nil
 }
 
 func Read(filename string) (parser.IR, error) {
@@ -46,11 +71,11 @@ func Read(filename string) (parser.IR, error) {
 	return c, nil
 }
 
-func Write(c parser.IR, filename string) error {
+func Write(c parser.IR, filename string) (string, error) {
 	path := fmt.Sprintf("./%s.c", filename)
 	f, err := os.Create(path)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() {
 		err = f.Close()
@@ -58,10 +83,10 @@ func Write(c parser.IR, filename string) error {
 	w := bufio.NewWriter(f)
 	err = c.Compile(w)
 	if err != nil {
-		return err
+		return "", err
 	}
 	err = w.Flush()
-	return err
+	return path, err
 }
 
 func process(path string, r *bufio.Reader) (parser.IR, error) {

@@ -97,13 +97,17 @@ func (s Stack) hasType(T Type) bool {
 	return false
 }
 func (s Stack) Pop() (free []string, err error) {
-	for _, v := range s.top().GetVars() {
+	i := 0
+	for i < len(s.top().GetVars()) {
+		v := s.top().GetVars()[i]
 		if v.Allocated() {
 			free = append(free, Line("free(%s)", v.Signature()))
 			err := s.top().Remove(v)
 			if err != nil {
 				return free, err
 			}
+		} else {
+			i++
 		}
 	}
 	return free, nil
