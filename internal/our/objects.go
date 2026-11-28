@@ -268,7 +268,7 @@ func BuiltIn(instructions ...string) []parser.Blamable {
 	inst := []parser.Blamable{}
 	for _, raw := range instructions {
 		inst = append(inst, parser.Blame(
-			"(builtin)",
+			"",
 			0,
 			RawInst(raw),
 		))

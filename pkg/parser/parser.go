@@ -154,17 +154,28 @@ type State interface {
 
 func Compile(instructions []Blamable, stack *Stack) (globals []string, main []string, err error) {
 	for _, inst := range instructions {
+		filename, line := inst.Blame()
 		declared, assign, err := inst.Get().Declare(stack)
 		if err != nil {
-			filename, line := inst.Blame()
 			return globals, main, fmt.Errorf("%s:%d: %s", filename, line, err)
 		}
-		globals = append(globals, declared...)
-		main = append(main, assign...)
+		globals = appendBlamed(globals, declared, filename, line)
+		main = appendBlamed(main, assign, filename, line)
 	}
 	freed, err := stack.Pop()
 	main = append(main, freed...)
 	return globals, main, err
+}
+
+func appendBlamed(oldLines []string, newLines []string, filename string, index int) []string {
+	for _, new := range newLines {
+		comment := "\n"
+		if filename != "" {
+			comment = fmt.Sprintf(" // %s:%d\n", filename, index)
+		}
+		oldLines = append(oldLines, strings.ReplaceAll(new, "\n", comment))
+	}
+	return oldLines
 }
 
 func Line(format string, vals ...any) string {

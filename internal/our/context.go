@@ -15,9 +15,9 @@ type intermediate struct {
 func IR() *intermediate {
 	return &intermediate{
 		parsed: []parser.Blamable{
-			parser.Blame("builtin", 0, Realloc),
-			parser.Blame("builtin", 0, Print),
-			parser.Blame("builtin", 0, Put),
+			parser.Blame("", 0, Realloc),
+			parser.Blame("", 0, Print),
+			parser.Blame("", 0, Put),
 		},
 	}
 }
