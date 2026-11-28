@@ -137,6 +137,64 @@ var assignVal = parser.Make(
 	},
 )
 
+var Hashtag = parser.Make(
+	"any",
+	parser.Pass[Empty](),
+)
+var comment = parser.Make(
+	"comment",
+	parser.Pass[Empty](),
+)
+
+var cReadyStart = parser.Make(
+	"c_declaration",
+	parser.Pass[Empty](),
+)
+var cStart = parser.Make(
+	"c_declaration",
+	func(Empty, byte) (CCode, parser.Compilable) {
+		return CCode(""), nil
+	},
+)
+
+func writeC(c CCode, char byte) (CCode, parser.Compilable) {
+	c += CCode(char)
+	return c, nil
+}
+
+var cInst = parser.Make(
+	"c_declaration",
+	writeC,
+)
+
+var cReadyClose = parser.Make(
+	"c_declaration",
+	parser.Pass[CCode](),
+)
+
+var cAbortClose = parser.Make(
+	"c_declaration",
+	func(c CCode, char byte) (CCode, parser.Compilable) {
+		c += CCode("}" + string(char))
+		return c, nil
+	},
+)
+
+var cAbortReady = parser.Make(
+	"c_declaration",
+	func(c CCode, char byte) (CCode, parser.Compilable) {
+		c += CCode('}')
+		return c, nil
+	},
+)
+
+var cDone = parser.Make(
+	"c_declared",
+	func(c CCode, char byte) (Empty, parser.Compilable) {
+		return Empty{}, c
+	},
+)
+
 func DefValStart(initialize func(char byte) (ValDeclaration, parser.Type)) func(AssignationReciever, byte) (AssignationReciever, parser.Compilable) {
 	return func(a AssignationReciever, char byte) (AssignationReciever, parser.Compilable) {
 		val, T := initialize(char)
@@ -193,6 +251,7 @@ var root = parser.Ignoring(' ').Has(
 	parser.Bind(&ProcedureCall, '-'),
 	parser.Bind(&startInstruction, chars.Uncapped...),
 	parser.Bind(&Root, '\n'),
+	parser.Bind(&Hashtag, '#'),
 )
 
 func Init() {
@@ -206,6 +265,44 @@ func instructions() {
 	subjects()
 	vars()
 	vals()
+	Hashtag.Has(
+		parser.Bind(&cReadyStart, 'C'),
+		parser.Bind(&comment, ' '),
+	)
+	comment.Has(
+		parser.Bind(&Root, '\n'),
+		parser.Bind(&comment, chars.All...),
+	)
+	cReadyStart.Has(parser.Ignoring('\n', ' ').Has(
+		parser.Bind(&cStart, '{'),
+	)...)
+	var writeC = parser.Prep(
+		parser.Bind(&cReadyClose, '}'),
+		parser.Bind(&cInst, chars.All...),
+	)
+	cStart.Has(
+		writeC...,
+	)
+	cInst.Has(
+		writeC...,
+	)
+	cAbortClose.Has(
+		writeC...,
+	)
+	var readyClose = parser.Prep(
+		parser.Bind(&cDone, 'C'),
+		parser.Bind(&cAbortReady, '}'),
+		parser.Bind(&cAbortClose, chars.All...),
+	)
+	cReadyClose.Has(
+		readyClose...,
+	)
+	cAbortReady.Has(
+		readyClose...,
+	)
+	cDone.Has(
+		root...,
+	)
 }
 func funcCall() {
 	ProcedureCall.Has(parser.Ignoring(' ').Has(

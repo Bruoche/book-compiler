@@ -20,25 +20,14 @@ void f_put (char * v__str) {
   printf("%s", v__str);
 }
 
-int v_num = 1; // ./test.bk:1
-char *v_hi; // ./test.bk:2
-int len_v_hi = 5; // ./test.bk:2
-char *v_name; // ./test.bk:7
-int len_v_name = 5; // ./test.bk:7
+char *v_salutation; // ./test.bk:1
+int len_v_salutation = 6; // ./test.bk:1
 
 int main() {
-  v_hi = strdup("hello"); // ./test.bk:2
-  if (v_hi == NULL) {    fprintf(stderr, "ERROR OOM: Out of memory, string \"hello\" could not be duplicated into v_hi.\n");     exit(1);  } // ./test.bk:2
-  f_print(v_hi); // ./test.bk:3
-  f__realloc(&v_hi, &len_v_hi, "Hello ", 6); // ./test.bk:4
-  v_num = 4; // ./test.bk:5
-  f_put(hi); // ./test.bk:6
-  v_name = strdup("Alice"); // ./test.bk:7
-  if (v_name == NULL) {    fprintf(stderr, "ERROR OOM: Out of memory, string \"Alice\" could not be duplicated into v_name.\n");     exit(1);  } // ./test.bk:7
-  f_print(v_name); // ./test.bk:8
-  f__realloc(&v_hi, &len_v_hi, "... ", 4); // ./test.bk:9
-  f_put(v_hi); // ./test.bk:10
-  f_print(v_name); // ./test.bk:10
-  free(v_hi);
-  free(v_name);
+  v_salutation = strdup("Hello "); // ./test.bk:1
+  if (v_salutation == NULL) {    fprintf(stderr, "ERROR OOM: Out of memory, string \"Hello \" could not be duplicated into v_salutation.\n");     exit(1);  } // ./test.bk:1
+    // ./test.bk:4
+    char * concat = strcat(v_salutation, "from C!"); // ./test.bk:4
+    f_print(concat); // ./test.bk:4
+  free(v_salutation);
 }

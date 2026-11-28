@@ -174,6 +174,9 @@ func (T Type) DefineVar(name string, val string) (declare []string, assign []str
 func (T Type) Assign(s *parser.Stack, signature string, val parser.Val) ([]string, error) {
 	return T.assigation(signature, val)
 }
+func (T Type) Recieve(val parser.Val) (string, error) {
+	return T.reception(val)
+}
 
 var Int = Primitive(
 	"Int",
@@ -229,7 +232,7 @@ var String = Object(
 			return val.Signature()
 		case RawString.GetName():
 			signature, err := val.Signature()
-			return fmt.Sprintf("strdup(%s)", signature), err
+			return fmt.Sprintf("\"%s\"", signature), err
 		default:
 			return "", fmt.Errorf("Type %s is not assignable to string", val)
 		}
@@ -260,9 +263,9 @@ var RawString = Object(
 	},
 )
 
-type RawInst string
+type CCode string
 
-var _ parser.Compilable = RawInst("")
+var _ parser.Compilable = CCode("")
 
 func BuiltIn(instructions ...string) []parser.Blamable {
 	inst := []parser.Blamable{}
@@ -270,14 +273,25 @@ func BuiltIn(instructions ...string) []parser.Blamable {
 		inst = append(inst, parser.Blame(
 			"",
 			0,
-			RawInst(raw),
+			CCode(raw),
 		))
 	}
 	return inst
 }
 
-func (raw RawInst) Declare(*parser.Stack) (declared []string, main []string, err error) {
+func (c CCode) Declare(s *parser.Stack) (declared []string, main []string, err error) {
+	raw := replaceTokens(c, s.GetVars())
+	raw = replaceTokens(raw, s.GetFuncs())
+	raw = replaceTokens(raw, s.GetTypes())
 	return declared, []string{string(raw)}, nil
+}
+
+func replaceTokens[T parser.Translatable](raw CCode, tokens []T) CCode {
+	for _, t := range tokens {
+		token := fmt.Sprintf("#{%s}", t.GetName())
+		raw = CCode(strings.ReplaceAll(string(raw), token, t.Signature()))
+	}
+	return raw
 }
 
 type Function struct {
@@ -311,6 +325,15 @@ func (f Function) Args() []parser.Signature {
 
 func (f Function) Declare(parent *parser.Stack) (declared []string, assign []string, err error) {
 	funcState := state{}
+	for _, arg := range f.args {
+		funcState.vars = append(funcState.vars, Var{
+			VarSignature{
+				Name: arg.GetName(),
+				T:    arg.Type(),
+			},
+			false,
+		})
+	}
 	stack := append(*parent, &funcState)
 	top, main, err := parser.Compile(f.instructions, &stack)
 	if err != nil {
@@ -347,16 +370,16 @@ var Realloc = Func(
 		VarSignature{"_len2", Int},
 	},
 	BuiltIn(
-		"if (*v__len1 != v__len2) {\n",
-		"  char *_tmp_realloc = (char *) realloc(*v__str1, v__len2 * sizeof(char) + 1);\n",
+		"if (*#{_len1} != #{_len2}) {\n",
+		"  char *_tmp_realloc = (char *) realloc(*#{_str1}, #{_len2} * sizeof(char) + 1);\n",
 		"  if (_tmp_realloc == NULL) { ",
 		"    fprintf(stderr, \"ERROR OOM: Out of memory, string could not be resized.\\n\"); ",
 		"    exit(1); ",
 		"  }\n",
-		"  *v__str1 = _tmp_realloc;\n",
-		"  *v__len1 = v__len2;\n",
+		"  *#{_str1} = _tmp_realloc;\n",
+		"  *#{_len1} = #{_len2};\n",
 		"}\n",
-		"memcpy(*v__str1, v__str2, v__len2+1);\n",
+		"memcpy(*#{_str1}, #{_str2}, #{_len2}+1);\n",
 	),
 )
 
@@ -367,7 +390,7 @@ var Print = Func(
 		VarSignature{"_str", String},
 	},
 	BuiltIn(
-		"printf(\"%s\\n\", v__str);\n",
+		"printf(\"%s\\n\", #{_str});\n",
 	),
 )
 
@@ -378,7 +401,7 @@ var Put = Func(
 		VarSignature{"_str", String},
 	},
 	BuiltIn(
-		"printf(\"%s\", v__str);\n",
+		"printf(\"%s\", #{_str});\n",
 	),
 )
 
