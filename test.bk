@@ -1,0 +1,11 @@
+num := 1
+hi := "hello"
+- print hi
+hi = "Hello "
+num = 4
+- put "hi"
+name := "Alice"
+- print name
+hi = "... "
+- put hi
+- print name

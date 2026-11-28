@@ -9,28 +9,28 @@ import (
 )
 
 type intermediate struct {
-	parsed []parser.Compilable
+	parsed []parser.Blamable
 }
 
 func IR() *intermediate {
 	return &intermediate{
-		parsed: []parser.Compilable{
-			Realloc,
-			Print,
-			Put,
+		parsed: []parser.Blamable{
+			parser.Blame("builtin", 0, Realloc),
+			parser.Blame("builtin", 0, Print),
+			parser.Blame("builtin", 0, Put),
 		},
 	}
 }
 
 var _ parser.IR = &intermediate{}
 
-func (ir *intermediate) Add(obj parser.Compilable) {
+func (ir *intermediate) Add(obj parser.Blamable) {
 	ir.parsed = append(ir.parsed, obj)
 }
 
 const TabSize = 2
 
-func (ir intermediate) Parsed() []parser.Compilable {
+func (ir intermediate) Parsed() []parser.Blamable {
 	return ir.parsed
 }
 

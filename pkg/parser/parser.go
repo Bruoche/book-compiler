@@ -7,9 +7,29 @@ import (
 )
 
 type IR interface {
-	Add(object Compilable)
+	Add(object Blamable)
 	Compile(*bufio.Writer) error
-	Parsed() []Compilable
+	Parsed() []Blamable
+}
+
+type Blamable struct {
+	obj      Compilable
+	filename string
+	line     int
+}
+
+func Blame(filename string, line int, obj Compilable) Blamable {
+	return Blamable{
+		obj:      obj,
+		filename: filename,
+		line:     line,
+	}
+}
+func (b Blamable) Get() Compilable {
+	return b.obj
+}
+func (b Blamable) Blame() (filename string, line int) {
+	return b.filename, b.line
 }
 
 type Compilable interface {
@@ -132,11 +152,12 @@ type State interface {
 	Remove(Signature) error
 }
 
-func Compile(instructions []Compilable, stack *Stack) (globals []string, main []string, err error) {
-	for _, compilable := range instructions {
-		declared, assign, err := compilable.Declare(stack)
+func Compile(instructions []Blamable, stack *Stack) (globals []string, main []string, err error) {
+	for _, inst := range instructions {
+		declared, assign, err := inst.Get().Declare(stack)
 		if err != nil {
-			return globals, main, fmt.Errorf("Error compiling: %s", err)
+			filename, line := inst.Blame()
+			return globals, main, fmt.Errorf("%s:%d: %s", filename, line, err)
 		}
 		globals = append(globals, declared...)
 		main = append(main, assign...)
@@ -154,7 +175,8 @@ type Type interface {
 	Translatable
 	DefineVar(name string, val string) (declare []string, assign []string, result []Var, err error)
 	CompileVal(val string) (string, error)
-	Recieve(*Stack, string, Val) ([]string, error)
+	Assign(*Stack, string, Val) ([]string, error)
+	Recieve(Val) (string, error)
 }
 
 type Var interface {
@@ -242,27 +264,30 @@ func (n Node[I, O]) Get() any {
 }
 
 func (n Node[I, O]) Next(char byte) (Processor, error) {
-	unhandled := []string{}
+	handled := []string{}
 	for _, linkable := range n.links {
 		if linkable.CanHandle(char) {
 			return linkable, nil
 		}
-		unhandled = append(unhandled, describe(linkable))
+		handled = append(handled, describe(linkable))
 	}
-	return nil, fmt.Errorf("%s: Unhandled char %s, expected: %s", n.name, string(char), strings.Replace(strings.Join(unhandled, " or "), "\n", "\\n", -1))
+	return nil, fmt.Errorf("%s", strings.ReplaceAll(fmt.Sprintf(
+		"%s: Unhandled char '%s', expected: %s",
+		n.name, string(char), strings.Join(handled, " or "),
+	), "\n", "\\n"))
 }
 
 func describe[T any](l Linkable[T]) string {
 	allowed := make([]string, 0)
 	streak := make([]byte, 0)
 	for _, handled := range l.Handled() {
-		streak, allowed = merge_pretty(streak, allowed, handled[0])
+		streak, allowed = streak_or_merge(streak, allowed, handled[0])
 	}
-	allowed = merge(streak, allowed)
+	allowed = merge_formatted(streak, allowed)
 	return fmt.Sprintf("%s (%s)", l.GetName(), strings.Join(allowed, "|"))
 }
 
-func merge_pretty(streak []byte, allowed []string, char byte) ([]byte, []string) {
+func streak_or_merge(streak []byte, allowed []string, char byte) ([]byte, []string) {
 	if len(streak) <= 0 {
 		return append(streak, char), allowed
 	}
@@ -270,16 +295,16 @@ func merge_pretty(streak []byte, allowed []string, char byte) ([]byte, []string)
 	if char == last+1 {
 		return append(streak, char), allowed
 	} else {
-		return []byte{char}, merge(streak, allowed)
+		return []byte{char}, merge_formatted(streak, allowed)
 	}
 }
 
-func merge(streak []byte, allowed []string) []string {
+func merge_formatted(streak []byte, allowed []string) []string {
 	if len(streak) <= 0 {
 		return allowed
 	}
 	if len(streak) <= 1 {
-		return append(allowed, string(streak[0]))
+		return append(allowed, fmt.Sprintf("'%s'", string(streak[0])))
 	}
 	return append(allowed, fmt.Sprintf("[%s-%s]", string(streak[0]), string(streak[len(streak)-1])))
 }

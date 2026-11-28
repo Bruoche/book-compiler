@@ -39,6 +39,22 @@ var readyCallArg = parser.Make(
 	parser.Pass[ProcCall](),
 )
 
+var wantCallArg = parser.Make(
+	"call_func_new_arg",
+	parser.Pass[ProcCall](),
+)
+
+var addStrArg = parser.Make(
+	"call_func_arg_str",
+	func(f ProcCall, char byte) (ProcCall, parser.Compilable) {
+		f.args = append(f.args, &rawVal{
+			def: "",
+			T:   RawString,
+		})
+		return f, nil
+	},
+)
+
 var addVarArg = parser.Make(
 	"call_func_arg",
 	func(f ProcCall, char byte) (ProcCall, parser.Compilable) {
@@ -49,17 +65,29 @@ var addVarArg = parser.Make(
 	},
 )
 
+func addCharToArg(f ProcCall, char byte) (ProcCall, parser.Compilable) {
+	last := len(f.args) - 1
+	f.args[last].Add(char)
+	return f, nil
+}
+
 var writeArg = parser.Make(
 	"call_func_arg",
-	func(f ProcCall, char byte) (ProcCall, parser.Compilable) {
-		last := len(f.args) - 1
-		f.args[last].Add(char)
-		return f, nil
-	},
+	addCharToArg,
+)
+
+var writeStrArg = parser.Make(
+	"call_func_arg_str",
+	addCharToArg,
+)
+
+var endStrArg = parser.Make(
+	"call_func_arg",
+	parser.Pass[ProcCall](),
 )
 
 var endCall = parser.Make(
-	"end_call",
+	"end_func_call",
 	func(f ProcCall, char byte) (Empty, parser.Compilable) {
 		return Empty{}, f
 	},
@@ -97,7 +125,6 @@ var startDefinedVar = parser.Make(
 	func(s Subject, char byte) (AssignationReciever, parser.Compilable) {
 		return &VarDef{
 			Name: s.name,
-			val:  RawVal{},
 		}, nil
 	},
 )
@@ -106,12 +133,11 @@ var assignVal = parser.Make(
 	func(s Subject, char byte) (AssignationReciever, parser.Compilable) {
 		return &Assignation{
 			targetName: s.name,
-			val:        RawVal{},
 		}, nil
 	},
 )
 
-func DefValStart(initialize func(char byte) (RawVal, parser.Type)) func(AssignationReciever, byte) (AssignationReciever, parser.Compilable) {
+func DefValStart(initialize func(char byte) (ValDeclaration, parser.Type)) func(AssignationReciever, byte) (AssignationReciever, parser.Compilable) {
 	return func(a AssignationReciever, char byte) (AssignationReciever, parser.Compilable) {
 		val, T := initialize(char)
 		a.Assign(val)
@@ -122,15 +148,15 @@ func DefValStart(initialize func(char byte) (RawVal, parser.Type)) func(Assignat
 
 var DefValAppend = func(a AssignationReciever, char byte) (AssignationReciever, parser.Compilable) {
 	v := a.GetVal()
-	v.def += string(char)
+	v.Add(char)
 	a.Assign(v)
 	return a, nil
 }
 
 var DefinedVarIntStart = parser.Make(
 	"define_int_val",
-	DefValStart(func(char byte) (RawVal, parser.Type) {
-		return RawVal{
+	DefValStart(func(char byte) (ValDeclaration, parser.Type) {
+		return &rawVal{
 			def: string(char),
 			T:   Int,
 		}, Int
@@ -142,8 +168,8 @@ var DefinedVarInt = parser.Make(
 )
 var DefinedVarStrStart = parser.Make(
 	"define_str_val",
-	DefValStart(func(char byte) (RawVal, parser.Type) {
-		return RawVal{
+	DefValStart(func(char byte) (ValDeclaration, parser.Type) {
+		return &rawVal{
 			def: "",
 			T:   RawString,
 		}, String
@@ -193,13 +219,17 @@ func funcCall() {
 		parser.Bind(&readyCallArg, ' '),
 		parser.Bind(&callFunc, chars.Letters...),
 	)
-	readyCallArg.Has(parser.Ignoring(' ').Has(
-		parser.Bind(&endCall, '\n'),
+	newArg := parser.Prep(
+		parser.Bind(&addStrArg, '"'),
 		parser.Bind(&addVarArg, chars.Uncapped...),
+	)
+	readyCallArg.Has(parser.Ignoring(' ').Has(
+		append([]parser.Linkable[ProcCall]{parser.Bind(&endCall, '\n')},
+			newArg...)...,
 	)...)
 	argCall := parser.Prep(
 		parser.Bind(&writeArg, chars.Letters...),
-		parser.Bind(&readyCallArg, ' '),
+		parser.Bind(&wantCallArg, ','),
 		parser.Bind(&endCall, '\n'),
 	)
 	addVarArg.Has(
@@ -208,6 +238,23 @@ func funcCall() {
 	writeArg.Has(
 		argCall...,
 	)
+	argStr := parser.Prep(
+		parser.Bind(&endStrArg, '"'),
+		parser.Bind(&writeStrArg, chars.All...),
+	)
+	addStrArg.Has(
+		argStr...,
+	)
+	writeStrArg.Has(
+		argStr...,
+	)
+	endStrArg.Has(
+		parser.Bind(&wantCallArg, ','),
+		parser.Bind(&endCall, '\n'),
+	)
+	wantCallArg.Has(parser.Ignoring(' ', '\n').Has(
+		newArg...,
+	)...)
 	endCall.Has(
 		root...,
 	)

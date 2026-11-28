@@ -29,11 +29,15 @@ int len_v_name = 5;
 int main() {
   v_hi = strdup("hello");
   if (v_hi == NULL) {    fprintf(stderr, "ERROR OOM: Out of memory, string \"hello\" could not be duplicated into v_hi.\n");     exit(1);  }
+  f_print(v_hi);
   f__realloc(&v_hi, &len_v_hi, "Hello ", 6);
   v_num = 4;
-  f_put(v_hi);
+  f_put(hi);
   v_name = strdup("Alice");
   if (v_name == NULL) {    fprintf(stderr, "ERROR OOM: Out of memory, string \"Alice\" could not be duplicated into v_name.\n");     exit(1);  }
+  f_print(v_name);
+  f__realloc(&v_hi, &len_v_hi, "... ", 4);
+  f_put(v_hi);
   f_print(v_name);
   free(v_hi);
   free(v_name);

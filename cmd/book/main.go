@@ -51,7 +51,7 @@ func compile(filename string) (string, error) {
 	}
 	result, err := Write(c, filename)
 	if err != nil {
-		return "", fmt.Errorf("Error during compilation: %s\n", err)
+		return "", fmt.Errorf("Compilation error: %s\n", err)
 	}
 	return result, nil
 }
@@ -109,7 +109,7 @@ func process(path string, r *bufio.Reader) (parser.IR, error) {
 				return c, tracker.Throw(err)
 			}
 			if defined != nil {
-				c.Add(defined)
+				c.Add(parser.Blame(tracker.path, tracker.line, defined))
 			}
 			object = node.Get()
 		}
@@ -118,7 +118,7 @@ func process(path string, r *bufio.Reader) (parser.IR, error) {
 			if err == io.EOF {
 				last, done := object.(parser.Compilable)
 				if done {
-					c.Add(last)
+					c.Add(parser.Blame(tracker.path, tracker.line, last))
 					return c, nil
 				}
 				_, done = object.(our.Empty)
